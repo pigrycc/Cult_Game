@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Crypt of Minions</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ws: wss: 'self'; media-src 'self' blob:">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="view"></div>
+  <div id="blind"></div>
+  <div id="ghostTint"></div>
+  <div id="ui">
+    <div id="hud" class="hidden">
+      <div id="bar"><div id="barTrack"><div id="barYellow"></div><div id="barRed"></div><div id="barMarkers"></div></div><div id="barLabel"></div></div>
+      <div id="taskBoard"></div>
+      <div id="roomName"></div>
+      <canvas id="minimap"></canvas>
+      <div id="lobbyInfo"></div>
+      <div id="phaseTimer"></div>
+      <div id="nameplates"></div>
+      <div id="crosshair">+</div>
+      <div id="holdRing"></div>
+      <div id="prompt"></div>
+      <div id="tooltip"></div>
+      <div id="bigText"></div>
+      <div id="cerPanel"></div>
+      <div id="toasts"></div>
+      <div id="chatLog"></div>
+      <input id="chatInput" class="hidden" maxlength="160" placeholder="Say something… (proximity / intercom / sanctuary)">
+      <div id="bottomBar"></div>
+      <div id="keysHelp">WASD move • Shift run • Space jump/hop off • E use/hold • Q drop • LMB lift/throw/slap • F shove • X buck rider • G role card • V push-to-talk • Enter chat • Tab board • M map • F1 debug</div>
+    </div>
+    <div id="menu">
+      <div class="menuBox">
+        <div class="logo">CRYPT <span>of</span> MINIONS</div>
+        <div class="tag">a slapstick social-deduction summoning ritual for 5–11 hooded minions</div>
+        <label>Your minion name <input id="nameIn" maxlength="16"></label>
+        <div id="hostBox" class="box">
+          <h3>Host a crypt</h3>
+          <label>Port <input id="portIn" value="7777" size="6"></label>
+          <label><input type="checkbox" id="dbgAll"> Allow debug console (F1) for all players</label>
+          <button id="hostBtn" class="primary">HOST GAME</button>
+          <div class="small">Other players join with your IP:port (LAN, VPN like Tailscale/ZeroTier/Hamachi, or a forwarded TCP port).</div>
+        </div>
+        <div class="box">
+          <h3>Join a crypt</h3>
+          <label>Host address <input id="joinIn" placeholder="192.168.0.10:7777"></label>
+          <button id="joinBtn">JOIN</button>
+        </div>
+        <div id="menuErr"></div>
+        <div class="small">Solo testing: Host → press F1 in the lobby → Spawn bots → START GAME.</div>
+      </div>
+    </div>
+    <div id="reveal" class="hidden"></div>
+    <div id="finale" class="hidden"></div>
+    <div id="score" class="hidden"></div>
+    <div id="modal" class="hidden"></div>
+    <div id="debug" class="hidden"></div>
+  </div>
+  <script type="module" src="bundle.js"></script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+# Crypt of Minions — System Architecture
+
+## 1. Topology (host-authoritative client/server)
+
+```
+┌──────────────── Host PC (CryptOfMinions.exe) ────────────────┐
+│ Electron main process                                         │
+│  └─ GameServer (ws, port 7777) ── Match (authoritative sim)   │
+│        ▲ 60 Hz tick: physics, bars, tasks, NPCs, ceremony     │
+│        │ 30 Hz "snap" (transforms)  10 Hz "state" (FILTERED)  │
+│ Renderer process (three.js client) ── ws://127.0.0.1:7777     │
+└────────────────────────────────────────────────────────────────┘
+          ▲ ws://host-ip:7777           ▲
+   Client PC (same exe → JOIN)    Client PC …   (5–11 players total)
+```
+
+* The host runs the **same exe**; the server lives in the Electron main process, the host's own
+  renderer connects to it over loopback with a random **host token** (grants START / debug).
+* `dist/server.cjs` is the same server as a headless dedicated host (`node server.cjs 7777`).
+* **Source of truth:** role/faction deal, NPC glyphs, crystals, bars, task validation, gates and
+  ceremony resolution exist only on the host. `GameServer.stateFor(viewer)` builds a
+  per-viewer packet: other players' factions, roles and NPC glyphs are only included when the
+  viewer is entitled to them (Blood Pact, inspection, role reveal, glyph authorisation, God Mode).
+  A client memory dump therefore can't reveal hidden information.
+
+## 2. Movement sync
+* Client samples input each frame (sub-stepped to ≤33 ms), predicts locally with the shared
+  deterministic controller `shared/physics.js`, batches frames `{seq,dt,fwd,strafe,yaw,pitch,jump,sprint}`
+  at 30 Hz.
+* Host re-simulates every frame with the same code (dt clamped to 50 ms → no speed hacks) and
+  returns `snap.me` + `ack`. Client rewinds to the authoritative state, replays unacked frames
+  and smooths the correction (exponential visual offset).
+* Remote minions are rendered 100 ms in the past, interpolated between 30 Hz snapshots.
+* Ragdoll, carried, riding and frozen states are host-driven flags; the client stops predicting
+  while locked and follows the snapshot.
+
+## 3. Game State Machine (`server/Match.js`, `server/Ceremony.js`)
+
+| Phase | Entry | Exit |
+|---|---|---|
+| `LOBBY` | server start / "return to lobby" | host START with ≥5 → `LOBBY_LOCKED`, deal |
+| `STATE_REVEAL_SCREEN` | deal factions (table §7.1), unique roles 1–21, random Master | 5 s back + 5 s front |
+| `STATE_GAMEPLAY_WORK` | teleport, 3 captives seated, task pool filled, Red Bar running | Yellow hits milestone → CEREMONY · Red hits it first → FINALE (everyone loses) |
+| `STATE_CEREMONY` | Red frozen, barriers up | debate timer ends → WORK; FINAL milestone or Chaos-Leader living sacrifice → FINALE |
+| `STATE_FINALE` | winner by altar majority, tie → Chaos | host → LOBBY |
+
+Ceremony sub-states: `ANNOUNCE (3 s) → NOMINATE → VOTE → COUNT → REACTION → (success → NOMINATE again | fail → EXECUTION) → CURSE → EVENT → DEBATE`.
+Freezing / blinding per sub-state is centralised in `Ceremony.applyFreeze()`.
+
+## 4. Subsystems
+
+| Module | Responsibility |
+|---|---|
+| `ProgressBars` | Red `+X every T` (X auto = segment·T/workTime), Yellow `+segment/requiredTasks` per task, milestone markers k/M |
+| `TaskManager` | 32 tasks / 7 rooms, 12 mechanics (hold, fetch, books, coop, bell, bellows, carry, relay, carcass, stack, calib, runes), tools, items, coins, steam geysers, lard slips, cold-room door & bolt |
+| `NpcSystem` | captive pool, Selection Chamber, altar, Prison, glyph authorisation (fog of war), spyhole |
+| `Ceremony` | nomination, mutiny resolution, execution, curses, milestone events, debate, exhaustion |
+| `Roles` | 21 card abilities with timing windows + target validation, `roleRevealed` broadcast |
+| `Bots` | FSM bots (idle / roamer / voter) with A* over a nav-node graph; always perform Master/Executioner duties |
+| `Debug` | every Dev-Console command, host-authorised |
+| `GameServer` | transport, per-viewer filtering, voice routing |
+
+## 5. Packets
+
+Client → host (JSON):
+```
+hello {name, token?}          input {f:[{seq,dt,fwd,strafe,yaw,pitch,jump,sprint}]}
+use {target}  release  lmb {target?}  drop  shove {target}  buck  color {color}  start
+vote {amount 0..3}  ability {targets:[playerId]}  fanatical {accept}
+calib {uid, amounts[3]}  runes {uid, choice}  chat {text}  debug {cmd, a}  lobby  ping {c}
+```
+Target ids: `task:<uid>:<part>`, `tool:<id>`, `item:<id>`, `coin:<id>`, `npc:<id>`, `player:<id>`, `mirror`, `spyhole`, `bolt`, `door_out`, `door_in`.
+
+Host → client (JSON):
+```
+welcome {id, hostId}   reject {reason}   phase {phase}   teleport {x,z,yaw}
+snap  {ack, me:[x,y,z,vx,vy,vz,onGround,ragdoll], p:[[id,x,y,z,yaw,pitch,rag,spin,flags,speed]], c:[[taskUid,x,z]], bk:[[itemId,x,y,z]]}
+state {phase, you{private}, players[ filtered ], gates{per viewer}, bars, track, tasks, world, npcs[ filtered ], spy, cer, tally, balance, lobby, log, dbg?}
+reveal {faction, roleId, back, front}      roleRevealed {id, roleId, name}   ← RPC_BroadcastRoleRevealed
+toast | big | fx | chat {from,name,text,ch} | label {id,text,color,dur} | coins | finale {winner, reason, tally, reveal[], log[]}
+recipe | calibUI | runesUI | spyhole {list} | fanaticalOffer | converted
+```
+`flags` bits: 1 frozen · 2 carried · 4 riding · 8 ghost · 16 working · 32 grounded.
+
+Voice (binary): client → host = Int16 PCM, 16 kHz mono. Host → listener = `[speakerId u8][gain u8][flags u8][PCM]`;
+gain = proximity falloff (20 m) × 0.3^(walls between) or intercom pipe path, global (1.0) outside the Work Phase;
+muted / gagged speakers are dropped; flag 1 = Toxic Fumes (client garbles pitch + distortion), flag 2 = intercom (band-pass "tinny pipe").
+
+## 6. Fog-of-War rules (where enforced)
+* Faction icons: `stateFor` – `pact` only between dealt Blood cultists; `known` only from the viewer's private
+  knowledge map (Robe Inspection, Eye of Truth, Chaos pair); `faction` for self or God Mode.
+* Role icon: sent only after `roleRevealed` (or self / God Mode). Used card state public afterwards.
+* NPC glyph: `NpcSystem.authorized()` – Master inside the Selection Chamber, Executioner during execution,
+  Spy's single peek, Prison key holders, spyhole (executioner rejects), sacrificed (public), God Mode.
+  Everybody else receives the captive without `faction/curse` → "[Unknown Captive]".

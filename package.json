@@ -1,0 +1,27 @@
+{
+  "name": "crypt-of-minions",
+  "version": "0.9.0",
+  "description": "Crypt of Minions - social deduction slapstick co-op prototype",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "package": "node build.mjs --package",
+    "start": "electron dist/main.cjs",
+    "server": "node dist/server.cjs 7777",
+    "test:rules": "node tools/rules-test.mjs",
+    "test:sim": "node tools/sim-test.mjs 8 8"
+  },
+  "keywords": [],
+  "author": "Crypt Dev Team",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "three": "^0.186.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^33.4.11",
+    "esbuild": "^0.28.2"
+  }
+}

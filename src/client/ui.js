@@ -1,0 +1,396 @@
+// ============================================================================
+//  UI — DOM overlays: menu, reveal cards, HUD (dual bar, task board, card,
+//  crystals/gold), nameplates, NPC glyph tooltips, ceremony panels, modals,
+//  finale & scoreboard.
+// ============================================================================
+import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS } from '../shared/constants.js';
+import { TOOLS, ITEM_TYPES, RUNES } from '../shared/tasks.js';
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const h = (tag, cls = '', html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ------------------------------------------------------------------ glyphs
+const SHAPES = {
+  circle: '<circle cx="32" cy="32" r="18" fill="none" stroke-width="6"/>',
+  tri_up: '<path d="M32 10 L54 50 L10 50 Z" fill="none" stroke-width="6" stroke-linejoin="round"/>',
+  tri_down: '<path d="M32 54 L54 14 L10 14 Z" fill="none" stroke-width="6" stroke-linejoin="round"/>',
+  eye: '<path d="M6 32 Q32 6 58 32 Q32 58 6 32 Z" fill="none" stroke-width="5"/><circle cx="32" cy="32" r="7"/>',
+  cloud: '<path d="M16 44 Q6 44 8 34 Q10 24 20 26 Q22 14 34 16 Q46 14 46 26 Q58 26 56 36 Q56 44 46 44 Z" fill="none" stroke-width="5"/>',
+  key: '<circle cx="20" cy="32" r="10" fill="none" stroke-width="5"/><path d="M30 32 H56 M48 32 V42 M54 32 V40" stroke-width="5"/>',
+  star: '<path d="M32 6 L39 24 L58 25 L43 37 L48 56 L32 45 L16 56 L21 37 L6 25 L25 24 Z" fill="none" stroke-width="4" stroke-linejoin="round"/>',
+  seal: '<rect x="12" y="12" width="40" height="40" rx="6" fill="none" stroke-width="5"/><path d="M18 32 H46" stroke-width="6"/>',
+};
+export function glyphSVG(faction, curse, size = 56) {
+  const col = FACTION_INFO[faction]?.glyph || '#888';
+  const shape = SHAPES[CURSES[curse]?.shape || 'circle'];
+  return `<svg width="${size}" height="${size}" viewBox="0 0 64 64" style="filter:drop-shadow(0 0 6px ${col})"><g stroke="${col}" fill="${col}">${shape}</g></svg>`;
+}
+
+export class UI {
+  constructor() {
+    this.root = $('#ui');
+    this.toastsEl = $('#toasts');
+    this.bigEl = $('#bigText');
+    this.platesEl = $('#nameplates');
+    this.plates = new Map();
+    this.labels = [];
+    this.bubbles = new Map();
+    this.chatOpen = false;
+    this.modalOpen = false;
+    this.lastCountKey = '';
+    this.reveal = null;
+    this.recipe = null;
+  }
+
+  // ------------------------------------------------------------------ menu
+  showMenu({ electron, onHost, onJoin, error }) {
+    const m = $('#menu'); m.classList.remove('hidden');
+    $('#menuErr').textContent = error || '';
+    $('#hostBox').style.display = electron ? '' : 'none';
+    $('#nameIn').value = localStorage.getItem('crypt_name') || `Minion${Math.floor(Math.random() * 900 + 100)}`;
+    $('#joinIn').value = localStorage.getItem('crypt_join') || '127.0.0.1:7777';
+    $('#hostBtn').onclick = () => { localStorage.setItem('crypt_name', $('#nameIn').value); onHost({ name: $('#nameIn').value, port: +$('#portIn').value || 7777, debugAll: $('#dbgAll').checked }); };
+    $('#joinBtn').onclick = () => { localStorage.setItem('crypt_name', $('#nameIn').value); localStorage.setItem('crypt_join', $('#joinIn').value); onJoin({ name: $('#nameIn').value, addr: $('#joinIn').value }); };
+  }
+  hideMenu() { $('#menu').classList.add('hidden'); $('#hud').classList.remove('hidden'); }
+  menuError(e) { $('#menuErr').textContent = e; }
+
+  // ------------------------------------------------------------------ reveal (2D cards)
+  showReveal(msg, onDone) {
+    const f = FACTION_INFO[msg.faction], r = ROLE_BY_ID[msg.roleId];
+    const el = $('#reveal'); el.classList.remove('hidden'); el.style.opacity = 1;
+    el.innerHTML = `
+      <div class="cardWrap"><div class="card" id="rcard">
+        <div class="face back" style="--glow:${f.color}"><div class="crest">${f.icon}</div><div class="runes">ᚠ ᚢ ᚦ ᚨ ᚱ</div></div>
+        <div class="face front"><div class="rIcon">${r.icon}</div><div class="rName">${esc(r.name)}</div><div class="rNum">Role ${r.id} / 21</div><div class="rDesc">${esc(r.desc)}</div></div>
+      </div><div class="cardGlow" style="background:${f.color}"></div></div>
+      <div class="revealTitle" id="rTitle" style="color:${f.color}">${f.name.toUpperCase()}</div>
+      <div class="revealSub pulse" id="rSub">Press any key to reveal role</div>
+      <div class="revealTimer" id="rTimer">(00:05)</div>`;
+    let stage = 1, t = msg.back;
+    const flip = () => {
+      if (stage !== 1) return;
+      stage = 2; t = msg.front;
+      $('#rcard').classList.add('flipped');
+      $('.cardGlow', el).style.background = '#d8c8a0';
+      $('#rTitle').textContent = 'YOUR ROLE'; $('#rTitle').style.color = '#e8dcc0';
+      $('#rSub').textContent = msg.faction === 'blood' ? '🩸 Your Blood allies are marked next to their names.' : 'Keep your faction secret. Your card is single-use — [G] to reveal it.';
+      $('#rSub').classList.remove('pulse');
+    };
+    const key = () => flip();
+    window.addEventListener('keydown', key); el.onclick = key;
+    const iv = setInterval(() => {
+      t -= 0.1;
+      $('#rTimer').textContent = `(00:0${Math.max(0, Math.ceil(t))})`;
+      if (t <= 0) {
+        if (stage === 1) flip();
+        else { clearInterval(iv); window.removeEventListener('keydown', key); el.style.opacity = 0; setTimeout(() => { el.classList.add('hidden'); onDone && onDone(); }, 700); }
+      }
+    }, 100);
+  }
+
+  // ------------------------------------------------------------------ toasts / big text / labels
+  toast(text, kind = 'info') {
+    const e = h('div', 'toast ' + kind, esc(text));
+    this.toastsEl.prepend(e);
+    setTimeout(() => e.classList.add('out'), 5200); setTimeout(() => e.remove(), 6000);
+    while (this.toastsEl.children.length > 7) this.toastsEl.lastChild.remove();
+  }
+  big(text, sub = '', dur = 3, color = '#fff') {
+    this.bigEl.innerHTML = `<div class="bigMain" style="color:${color}">${esc(text)}</div>${sub ? `<div class="bigSub">${esc(sub)}</div>` : ''}`;
+    this.bigEl.classList.remove('out'); this.bigEl.style.opacity = 1;
+    clearTimeout(this.bigT); this.bigT = setTimeout(() => { this.bigEl.style.opacity = 0; }, Math.max(1.2, dur) * 1000);
+  }
+  label(id, text, color, dur) { this.labels.push({ id, text, color, until: performance.now() + dur * 1000 }); }
+
+  // ------------------------------------------------------------------ chat
+  chat(msg, me) {
+    const log = $('#chatLog');
+    const tag = msg.ch === 'intercom' ? '<span class="ch ic">[PIPE]</span>' : msg.ch === 'global' ? '<span class="ch gl">[SANCTUARY]</span>' : '<span class="ch lc">[NEAR]</span>';
+    const e = h('div', 'chatLine', `${tag} <b>${esc(msg.name)}:</b> ${esc(msg.text)}`);
+    log.appendChild(e); while (log.children.length > 9) log.firstChild.remove();
+    setTimeout(() => e.classList.add('fade'), 15000);
+    if (msg.ch !== 'intercom') this.bubbles.set(msg.from, { text: msg.text, until: performance.now() + 5000 });
+  }
+  openChat(onSend) {
+    const inp = $('#chatInput'); this.chatOpen = true; inp.classList.remove('hidden'); inp.value = ''; inp.focus();
+    inp.onkeydown = e => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { if (inp.value.trim()) onSend(inp.value); this.closeChat(); }
+      if (e.key === 'Escape') this.closeChat();
+    };
+  }
+  closeChat() { const inp = $('#chatInput'); inp.blur(); inp.classList.add('hidden'); this.chatOpen = false; }
+
+  // ------------------------------------------------------------------ HUD (called on each state packet)
+  updateHud(st, game) {
+    const you = st.you, me = st.players.find(p => p.id === you.id);
+    const inMatch = st.phase !== PHASE.LOBBY;
+    // --- dual progress bar
+    const bar = $('#bar'); bar.style.display = inMatch ? '' : 'none';
+    if (inMatch) {
+      $('#barRed').style.width = (st.bars.red * 100) + '%';
+      $('#barYellow').style.width = (st.bars.yellow * 100) + '%';
+      const mk = $('#barMarkers');
+      const key = st.bars.markers.join(',') + st.track.join(',') + st.bars.reached;
+      if (mk.dataset.k !== key) {
+        mk.dataset.k = key; mk.innerHTML = '';
+        st.bars.markers.forEach((v, i) => {
+          const ev = MILESTONE_EVENTS[st.track[i]];
+          const d = h('div', 'marker' + (i < st.bars.reached ? ' done' : ''), `<span title="${esc(ev.name)}">${ev.icon}</span>`);
+          d.style.left = (v * 100) + '%'; mk.appendChild(d);
+        });
+      }
+      const nextIdx = st.bars.reached;
+      const nextEv = MILESTONE_EVENTS[st.track[nextIdx]];
+      $('#barLabel').innerHTML = `<span class="red">▮ CRYPT DESTABILIZATION ${(st.bars.red * 100).toFixed(0)}%</span> &nbsp; <span class="yel">▮ STABILIZATION ${(st.bars.yellow * 100).toFixed(0)}%</span> &nbsp; Next: ${nextEv ? nextEv.icon + ' ' + nextEv.name : '—'} ${st.bars.running ? '' : '<span class="frz">❄ RED FROZEN</span>'}`;
+    }
+    // --- task board
+    const tb = $('#taskBoard'); tb.style.display = st.phase === PHASE.WORK || st.phase === PHASE.CEREMONY ? '' : 'none';
+    if (st.tasks) {
+      tb.innerHTML = `<div class="tbTitle">ACTIVE CRYPT TASKS:</div>` + st.tasks.map(t =>
+        `<div class="tbRow ${t.type !== 'solo' ? 'coop' : ''}"><span class="tbTag">[${t.tag}]</span> ${esc(t.name)} <span class="tbType">[${t.type === 'solo' ? '👤 SOLO' : t.type === 'coop3' ? '👥👤 CO-OP×3' : '👥 CO-OP'}]</span> <span class="tbCoin">(+${t.coins}💰)</span>${t.progress > 0 ? `<div class="tbProg"><div style="width:${t.progress * 100}%"></div></div>` : ''}</div>`).join('');
+    }
+    // --- lobby info
+    const li = $('#lobbyInfo');
+    if (st.lobby) {
+      li.style.display = '';
+      const L = st.lobby;
+      const liHtml = `<div class="pc">PLAYERS: ${L.count} / ${L.max} (MIN. ${L.min})</div>
+        <div class="small">Host address: ${L.ips.length ? L.ips.map(ip => `<b>${ip}:${L.port}</b>`).join(' / ') : 'localhost:' + L.port}</div>
+        <div class="small">Walk to the 🪞 mirror and press <b>E</b> to dye your robe.</div>
+        ${you.host ? `<button id="startBtn" ${L.canStart ? '' : 'disabled'}>${L.canStart ? '[START GAME]' : `Waiting for ${L.min - L.count} more…`}</button><div class="small">F1 → Debug: spawn bots to test solo</div>` : '<div class="small">Waiting for the host to start the ritual…</div>'}
+        <div class="lobbyList">${st.players.map(p => `<span style="color:${p.color}">●</span> ${esc(p.name)}${p.id === st.hostId ? ' 👑' : ''}${p.bot ? ' 🤖' : ''}`).join('<br>')}</div>`;
+      if (li.dataset.h !== liHtml) { li.dataset.h = liHtml; li.innerHTML = liHtml; const sb = $('#startBtn'); if (sb) sb.onclick = () => game.net.send({ t: 'start' }); }
+    } else li.style.display = 'none';
+    // --- bottom bar
+    const bb = $('#bottomBar'); bb.style.display = inMatch && st.phase !== PHASE.REVEAL ? '' : 'none';
+    if (inMatch && you.roleId) {
+      const r = ROLE_BY_ID[you.roleId], f = FACTION_INFO[you.faction];
+      const usable = you.ability.ok;
+      const statuses = [];
+      if (me?.master) statuses.push('👑 Master of Ceremonies');
+      if (me?.exec) statuses.push('🪓 Executioner');
+      if (you.exhausted) statuses.push('💤 Exhausted');
+      if (you.muted) statuses.push('🤐 Muted');
+      if (you.gagged) statuses.push('🔇 Gagged');
+      if (you.fumes > 0) statuses.push(`🤢 Intoxicated ${Math.ceil(you.fumes)}s`);
+      if (you.key) statuses.push('🗝️ Prison key');
+      if (you.ghost) statuses.push('👻 Ghost');
+      if (you.lookout) statuses.push('🔭 Look-Out vision');
+      if (you.leader) statuses.push('🔮 Chaos Leader');
+      const held = me?.tool ? TOOLS[me.tool]?.name : me?.item ? ITEM_TYPES[me.item]?.name : me?.npc ? 'Bound captive' : '';
+      const bbHtml = `
+        <div class="res"><div class="crys">💎 ${you.crystals}${you.infiniteMana ? '∞' : ''}</div><div class="gold">💰 ${you.gold}</div>
+          <div class="fac" style="color:${f.color}">${f.icon} ${f.name}</div></div>
+        <div class="held">${held ? '✋ ' + esc(held) + (me?.load ? ' + ' + esc(ITEM_TYPES[me.load]?.name) : '') + ' <span class="k">[Q]</span>' : ''}</div>
+        <div class="statuses">${statuses.map(s => `<span>${s}</span>`).join('')}</div>
+        <div id="roleCard" class="roleCard ${you.cardUsed ? 'used' : ''} ${usable ? 'usable' : ''}" title="${esc(r.desc)}">
+          <div class="rcIcon">${r.icon}</div><div class="rcName">${esc(r.name)}</div>
+          <div class="rcState">${you.cardUsed ? 'USED (face up)' : usable ? '▶ READY — press [G]' : esc(you.ability.reason || 'face down')}</div>
+          <div class="rcDesc">${esc(r.desc)}</div>
+        </div>`;
+      if (bb.dataset.h !== bbHtml) { bb.dataset.h = bbHtml; bb.innerHTML = bbHtml; $('#roleCard').onclick = () => game.useAbility(); }
+    }
+    // --- ceremony panel
+    this.updateCeremony(st, game);
+    // --- phase timer / spy timer
+    const pt = $('#phaseTimer');
+    if (st.cer) pt.innerHTML = `${st.cer.infinite ? '∞' : Math.ceil(st.cer.t) + 's'} <span>${cerTitle(st)}</span>`;
+    else if (st.spy.active && st.spy.id === you.id) pt.innerHTML = `🕳️ ${Math.ceil(st.spy.t)}s <span>Oubliette Spy window</span>`;
+    else pt.innerHTML = '';
+    // --- blind / fumes overlays
+    $('#blind').style.opacity = you.blind ? 0.97 : 0;
+    document.body.classList.toggle('drunk', you.fumes > 0);
+    $('#ghostTint').style.opacity = you.ghost ? 0.25 : 0;
+    // --- debug panel data
+    if (game.debug) game.debug.update(st);
+  }
+
+  updateCeremony(st, game) {
+    const cp = $('#cerPanel');
+    const c = st.cer;
+    if (!c) { cp.innerHTML = ''; cp.dataset.h = ''; cp.style.display = 'none'; this.lastCountKey = ''; return; }
+    cp.style.display = 'block';
+    const you = st.you, name = id => st.players.find(p => p.id === id)?.name ?? '?';
+    let html = '';
+    if (c.sub === CER.VOTE) {
+      html += `<div class="cpTitle">Executioner Nominated — <b>${esc(name(st.execId))}</b>. Do you agree?</div>`;
+      if (c.voter) {
+        const sealed = c.sealed.includes(you.id), prov = c.provoked.includes(you.id);
+        const opts = [[0, 'Yes'], [1, 'Disagree — 1 💎'], [2, 'Strongly Disagree — 2 💎'], [3, 'Absolutely Disagree — 3 💎']];
+        html += `<div class="voteRow">${opts.map(([v, l], i) => `<button class="vbtn ${c.myVote === v ? 'sel' : ''}" data-v="${v}" ${(v > 0 && (sealed || (v > you.crystals && !you.infiniteMana) || (c.anarchy && v > 1))) ? 'disabled' : ''}><span class="k">${i + 1}</span> ${l}</button>`).join('')}</div>`;
+        if (sealed) html += '<div class="cpNote">🤫 You are sealed by the Silence Enchanter.</div>';
+        if (prov) html += '<div class="cpNote">📢 You are provoked: you will play at least 1 crystal.</div>';
+        if (c.anarchy) html += '<div class="cpNote">🏴 Anarchy: max 1 crystal each, 1 is enough.</div>';
+        html += `<div class="cpNote">Threshold to overthrow: <b>${c.threshold}</b> 💎 • Crystals are lost only if the rebellion succeeds.</div>`;
+      } else html += `<div class="cpNote">The crew is voting… (${c.voted.length} decided)</div>`;
+    } else if (c.sub === CER.COUNT || c.sub === CER.REACTION || (c.result && c.sub === CER.EXECUTION && performance.now() - (this.resT || 0) < 3500)) {
+      const key = c.reveal.map(r => r.id).join(',');
+      if (key !== this.lastCountKey) { this.lastCountKey = key; this.countStart = performance.now(); this.resT = performance.now(); }
+      const elapsed = (performance.now() - this.countStart) / 1000;
+      const shown = c.sub === CER.COUNT ? Math.min(c.reveal.length, Math.floor(elapsed / 0.4) + 1) : c.reveal.length;
+      let run = 0;
+      const rows = c.reveal.slice(0, shown).map(r => { const v = r.pacified ? 0 : r.amount * (r.doubled ? 2 : 1); run += v; return `<div class="cnt ${r.amount ? 'reb' : ''}">${esc(r.name)}: <b>${r.amount}</b> 💎 ${r.doubled ? '×2 📯' : ''}${r.pacified ? ' 🕊️ pacified' : ''}</div>`; }).join('');
+      const th = c.threshold, mx = Math.max(th * 1.5, run, 1);
+      html += `<div class="cpTitle">${c.sub === CER.REACTION ? 'REACTION TIME — abilities [G]' : 'Counting the Mana Crystals…'}</div>
+        <div class="mbar"><div class="mfill ${run >= th ? 'ok' : ''}" style="width:${run / mx * 100}%"></div><div class="mth" style="left:${th / mx * 100}%"><span>${th} needed${c.tribune ? ' (⚖️ halved)' : ''}${c.anarchy ? ' (🏴)' : ''}</span></div></div>
+        <div class="cntGrid">${rows}</div><div class="cpNote">Total: <b>${run}</b> / ${th}</div>`;
+    } else if (c.sub === CER.NOMINATE) {
+      html += `<div class="cpTitle">${esc(name(st.masterId))} — choose an executioner</div>`;
+      if (st.masterId === you.id) html += '<div class="cpNote">Aim at a minion and press <b>LMB</b>. Not eligible: 💤 exhausted, 🤐 muted, 👻 ghosts.</div>';
+    } else if (c.sub === CER.EXECUTION) {
+      html += `<div class="cpTitle">${esc(name(st.execId))} feeds a captive to the portal</div>`;
+      if (st.execId === you.id) html += '<div class="cpNote">Aim at a captive on the altar to read its glyph. <b>LMB</b> to lift, walk to the portal, <b>LMB</b> to throw.</div>';
+    } else if (c.sub === CER.EVENT) {
+      const ev = MILESTONE_EVENTS[c.mode];
+      if (ev) html += `<div class="cpTitle">${ev.icon} ${ev.name}</div><div class="cpNote">${esc(ev.desc)}</div>`;
+      if (c.mode === 'MUTENESS') html += '<div class="cpNote">Cursed player cannot be nominated for Master of Ceremonies/Executioner during the next sacrifice.</div>';
+      if (st.masterId === you.id && ['INSPECTION', 'MUTENESS', 'FLOGGING'].includes(c.mode)) html += `<div class="cpNote big">${c.mode === 'FLOGGING' ? '⛓️ Whip in hand: strike a player (LMB)' : c.mode === 'INSPECTION' ? 'Strike a player to reveal their cult (LMB)' : 'Slap a player to curse them (LMB)'}</div>`;
+    } else if (c.sub === CER.CURSE) {
+      const m = { eye: '👁️ Eye of Truth — the Executioner peeks at one minion', abyss: '🗝️ Call of the Abyss — the Master hands out the Prison key', initiation: '🔮 Dark Initiation', banner: '' }[c.mode];
+      if (m) html += `<div class="cpTitle">${m}</div>`;
+      if ((c.mode === 'eye' && st.execId === you.id) || (c.mode === 'abyss' && st.masterId === you.id) || (c.mode === 'initiation' && you.leader)) html += '<div class="cpNote big">Walk up to a minion and strike them (LMB)</div>';
+    } else if (c.sub === CER.DEBATE) {
+      html += `<div class="cpTitle">DEBATE — New Hazard in ${c.infinite ? '∞' : Math.ceil(c.t) + 's'}</div><div class="cpNote">Global voice [V] & chat [Enter] in the Sanctuary.${c.lastSacrifice ? ` Sacrificed: ${FACTION_INFO[c.lastSacrifice.faction].icon} ${FACTION_INFO[c.lastSacrifice.faction].short} • ${CURSES[c.lastSacrifice.curse].name}` : ''}</div>`;
+    } else if (c.sub === CER.ANNOUNCE) html += '<div class="cpTitle">Well Done — Execution in 3 sec</div>';
+    if (cp.dataset.h === html) return;
+    cp.dataset.h = html; cp.innerHTML = html;
+    cp.querySelectorAll('.vbtn').forEach(b => b.onclick = () => game.vote(+b.dataset.v));
+  }
+
+  // ------------------------------------------------------------------ per-frame overlays
+  setPrompt(text) { const p = $('#prompt'); if (p.dataset.t !== text) { p.dataset.t = text; p.innerHTML = text; } }
+  setHold(frac) { const r = $('#holdRing'); if (frac == null) { r.style.display = 'none'; return; } r.style.display = ''; r.style.background = `conic-gradient(#ffd75e ${frac * 360}deg, rgba(255,255,255,0.15) 0)`; }
+  setTooltip(html) { const t = $('#tooltip'); if (!html) { t.style.display = 'none'; return; } t.style.display = ''; if (t.dataset.h !== html) { t.dataset.h = html; t.innerHTML = html; } }
+
+  npcTooltip(n) {
+    if (n.faction) {
+      const f = FACTION_INFO[n.faction], c = CURSES[n.curse];
+      return `<div class="glyph">${glyphSVG(n.faction, n.curse)}</div><div><div style="color:${f.glyph};font-weight:bold">${f.name}</div><div class="cur">${c.name}</div><div class="cdesc">${esc(c.desc)}</div></div>`;
+    }
+    return `<div class="glyph unknown">?</div><div><div style="font-weight:bold">[Unknown Captive]</div><div class="cdesc">Its runic glyph is hidden under the sack.</div></div>`;
+  }
+
+  /** Nameplate fog-of-war rendering. */
+  updatePlates(list) {
+    const seen = new Set();
+    for (const it of list) {
+      seen.add(it.id);
+      let el = this.plates.get(it.id);
+      if (!el) { el = h('div', 'plate'); this.platesEl.appendChild(el); this.plates.set(it.id, el); }
+      if (!it.visible) { el.style.display = 'none'; continue; }
+      el.style.display = '';
+      el.style.transform = `translate(-50%,-100%) translate(${it.x}px,${it.y}px) scale(${it.scale})`;
+      if (el.dataset.h !== it.html) { el.dataset.h = it.html; el.innerHTML = it.html; }
+    }
+    for (const [id, el] of this.plates) if (!seen.has(id)) { el.remove(); this.plates.delete(id); }
+  }
+
+  plateHtml(p, st, extraLabel, bubble) {
+    const you = st.you;
+    const top = [];
+    if (p.role) { const r = ROLE_BY_ID[p.role]; if (r && (p.id !== you.id)) top.push(`<span title="${esc(r.name)}">${r.icon}</span>`); }
+    if (p.master) top.push(STATUS_ICONS.master); if (p.exec) top.push(STATUS_ICONS.exec);
+    if (p.exhausted) top.push(STATUS_ICONS.exhausted); if (p.muted) top.push(STATUS_ICONS.muted); if (p.gagged) top.push(STATUS_ICONS.gagged);
+    if (p.fumes) top.push(STATUS_ICONS.fumes); if (p.ghost) top.push(STATUS_ICONS.ghost); if (p.key) top.push(STATUS_ICONS.key);
+    if (p.talking) top.push('🔊');
+    let pre = '';
+    if (p.faction && p.id !== you.id) pre = FACTION_INFO[p.faction].icon + (p.leader ? '👑' : '') + ' ';        // God Mode
+    else if (p.pact === 'blood') pre = '🩸 ';                                                                    // Blood Pact
+    else if (p.known) pre = FACTION_INFO[p.known].icon + ' ';                                                   // inspection / eye / chaos pair
+    const not = p.publicNot ? `<div class="pNot">not ${FACTION_INFO[p.publicNot].icon}</div>` : '';
+    return `${bubble ? `<div class="bubble">${esc(bubble)}</div>` : ''}${extraLabel ? `<div class="pLabel" style="color:${extraLabel.color}">${esc(extraLabel.text)}</div>` : ''}
+      <div class="pTop">${top.join(' ')}</div><div class="pName">${pre}${esc(p.name)} <span class="pCry">💎${p.crystals}</span></div>${not}`;
+  }
+
+  // ------------------------------------------------------------------ modals
+  modal(html, { onClose, wide } = {}) {
+    if (document.pointerLockElement) document.exitPointerLock();
+    const m = $('#modal'); m.classList.remove('hidden'); m.innerHTML = `<div class="mbox ${wide ? 'wide' : ''}">${html}<button class="mclose">✕</button></div>`;
+    this.modalOpen = true;
+    const close = () => { m.classList.add('hidden'); m.innerHTML = ''; this.modalOpen = false; onClose && onClose(); };
+    $('.mclose', m).onclick = close;
+    this.closeModal = close;
+    return m;
+  }
+
+  palette(current, onPick) {
+    const m = this.modal(`<h3>🪞 The Mirror of Vanity</h3><p>Choose the colour of your robe (synced live for everyone).</p><div class="pal">${ROBE_COLORS.map(c => `<div class="sw ${c === current ? 'sel' : ''}" data-c="${c}" style="background:${c}"></div>`).join('')}</div><input type="color" id="pcCustom" value="${current}"> custom`);
+    m.querySelectorAll('.sw').forEach(s => s.onclick = () => { onPick(s.dataset.c); m.querySelectorAll('.sw').forEach(x => x.classList.toggle('sel', x === s)); });
+    $('#pcCustom').oninput = e => onPick(e.target.value);
+  }
+
+  abilityTargets(role, st, onConfirm) {
+    const chosen = [];
+    const render = () => {
+      const step = role.targets[chosen.length];
+      if (!step) { this.closeModal(); onConfirm(chosen); return; }
+      const others = st.players.filter(p => !p.ghost);
+      const m = this.modal(`<h3>${role.icon} ${esc(role.name)}</h3><p>${esc(role.desc)}</p><h4>${chosen.length + 1}/${role.targets.length}: ${esc(step.label)}</h4>
+        <div class="plist">${others.map(p => `<button class="pbtn" data-id="${p.id}" ${chosen.includes(p.id) && step.filter !== 'any' ? 'disabled' : ''}><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''} 💎${p.crystals}</button>`).join('')}</div>`);
+      m.querySelectorAll('.pbtn').forEach(b => b.onclick = () => { chosen.push(+b.dataset.id); render(); });
+    };
+    render();
+  }
+
+  calib(msg, onSubmit) {
+    const amounts = msg.names.map(() => 0);
+    const render = () => {
+      const m = this.modal(`<h3>⚖️ Balance Scale</h3><p>You don't know the ratio — your partner in the Library must read the recipe scroll and dictate it through the brass intercom pipe.</p>
+        ${msg.names.map((n, i) => `<div class="ing"><span>${n}</span><button data-i="${i}" data-d="-1">−</button><b>${amounts[i]}</b><button data-i="${i}" data-d="1">+</button> scoops</div>`).join('')}
+        <button id="weigh" class="primary">WEIGH</button>`);
+      m.querySelectorAll('.ing button').forEach(b => b.onclick = () => { const i = +b.dataset.i; amounts[i] = Math.max(0, Math.min(5, amounts[i] + +b.dataset.d)); render(); });
+      $('#weigh').onclick = () => { onSubmit(amounts); this.closeModal(); };
+    };
+    render();
+  }
+  recipeCard(msg) {
+    this.modal(`<h3>📜 Recipe Scroll</h3><p>Dictate this through the intercom pipe on the wall (stand next to it and talk [V] / chat [Enter]):</p>
+      <div class="recipe">${msg.names.map((n, i) => `<div>${msg.recipe[i]} scoop${msg.recipe[i] === 1 ? '' : 's'} of <b>${n}</b></div>`).join('')}</div>`);
+  }
+  runes(msg, onChoose) {
+    const m = this.modal(`<h3>📖 Runic Dictionary</h3><p>Find the rune glowing on the bookshelf wall and move the bookmark to it.</p><div class="runeGrid">${msg.options.map(i => `<button class="rune" data-i="${i}">${RUNES[i]}</button>`).join('')}</div>`);
+    m.querySelectorAll('.rune').forEach(b => b.onclick = () => { onChoose(+b.dataset.i); this.closeModal(); });
+  }
+  spyhole(msg) {
+    this.modal(`<h3>👁️ Spyhole — Prison of the Rejected</h3>${msg.list.length ? '' : '<p>The cell is empty… or too dark to tell.</p>'}<div class="spyList">${msg.list.map(n => `<div class="spyRow">${glyphSVG(n.faction, n.curse, 40)}<div><b style="color:${FACTION_INFO[n.faction].glyph}">${FACTION_INFO[n.faction].name}</b> • ${CURSES[n.curse].name}<br><small>Rejected at milestone ${n.round} (${n.discard === 'exec' ? 'by the Executioner' : n.discard})</small></div></div>`).join('')}</div>`, { wide: true });
+  }
+  fanatical(msg, onReply) {
+    const m = this.modal(`<h3>🔥 Fanatical Instigator</h3><p>${esc(msg.from)} goads you: throw ALL your ${msg.crystals} Mana Crystals into the rebellion?</p><button id="fyes" class="primary">ALL IN!</button> <button id="fno">Refuse</button>`, { onClose: () => onReply(false) });
+    $('#fyes', m).onclick = () => { onReply(true); this.modalOpen = false; m.classList.add('hidden'); };
+    $('#fno', m).onclick = () => { onReply(false); this.modalOpen = false; m.classList.add('hidden'); };
+  }
+
+  // ------------------------------------------------------------------ finale & scoreboard
+  finale(msg, isHost, onLobby) {
+    const el = $('#finale'); el.classList.remove('hidden');
+    const w = msg.winner === 'nobody' ? { name: 'THE CRYPT EXPLODED', color: '#ff5a1a', icon: '💥' } : FACTION_INFO[msg.winner];
+    el.innerHTML = `<div class="fin">
+      <div class="finIcon">${w.icon}</div><div class="finTitle" style="color:${w.color}">${msg.winner === 'nobody' ? 'EVERYONE LOSES' : w.name.toUpperCase() + ' WINS'}</div>
+      <div class="finReason">${esc(msg.reason)}</div>
+      <div class="finTally">🔥 ${msg.tally.fire} &nbsp; 🩸 ${msg.tally.blood} &nbsp; 🔮 ${msg.tally.chaos}</div>
+      <table class="finTable"><tr><th>Minion</th><th>Cult</th><th>Role</th><th>💰</th></tr>
+      ${msg.reveal.map(p => `<tr><td><span style="color:${p.color}">●</span> ${esc(p.name)}${p.ghost ? ' 👻' : ''}</td><td style="color:${FACTION_INFO[p.faction].color}">${FACTION_INFO[p.faction].icon} ${FACTION_INFO[p.faction].short}${p.leader ? ' (Leader)' : ''}</td><td>${ROLE_BY_ID[p.roleId].icon} ${esc(ROLE_BY_ID[p.roleId].name)}</td><td>${p.gold}</td></tr>`).join('')}</table>
+      <div class="finLog">${msg.log.map(l => `M${l.milestone}: ${FACTION_INFO[l.faction].icon} ${CURSES[l.curse].name} (Exec ${esc(l.exec)})`).join(' • ')}</div>
+      ${isHost ? '<button id="toLobby" class="primary">Return to lobby</button>' : '<div class="small">Waiting for the host…</div>'}</div>`;
+    const b = $('#toLobby'); if (b) b.onclick = onLobby;
+  }
+  hideFinale() { $('#finale').classList.add('hidden'); }
+
+  scoreboard(show, st) {
+    const el = $('#score');
+    if (!show || !st) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.innerHTML = `<h3>Minions</h3><table>${st.players.map(p => `<tr><td><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.bot ? '🤖' : ''}</td><td>${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''}${p.muted ? '🤐' : ''}${p.ghost ? '👻' : ''}${p.key ? '🗝️' : ''}</td><td>💎${p.crystals}</td><td>${p.role ? ROLE_BY_ID[p.role].icon + ' ' + esc(ROLE_BY_ID[p.role].name) : '🂠'}</td><td>${p.publicNot ? 'not ' + FACTION_INFO[p.publicNot].icon : ''}</td></tr>`).join('')}</table>
+      <div class="small">Altar: 🔥${st.tally.fire} 🩸${st.tally.blood} 🔮${st.tally.chaos} • Rebellion threshold ${st.balance.threshold} 💎 • ${st.milestones} milestones</div>
+      <div class="logBox">${st.log.map(l => `<div>${esc(l.text)}</div>`).join('')}</div>`;
+  }
+}
+
+function cerTitle(st) {
+  const c = st.cer;
+  return ({ ANNOUNCE: 'Assembling', NOMINATE: 'Nomination', VOTE: 'Loyalty check', COUNT: 'Counting', REACTION: 'Reaction time', EXECUTION: 'Execution', CURSE: 'Curse', EVENT: MILESTONE_EVENTS[c.mode]?.name || 'Milestone event', DEBATE: 'Debate — New Hazard in' })[c.sub] || '';
+}
+export { ROLES };
