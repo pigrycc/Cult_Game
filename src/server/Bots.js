@@ -7,12 +7,21 @@
 //    roamer  – FSM: PICK → NAVIGATE (waypoint graph A*) → WORK (timed) → PICK
 //              + random ceremony votes
 //    voter   – idle in the Work Phase, random 0–2 crystals during rebellions
+//    human   – "Humanlike": does tasks like a roamer, but reasons about trust
+//              (Blood Pact, inspections, flogging evidence), mutinies against a
+//              duo it believes hostile, picks captives/executioners/victims for
+//              its own cult and fires its role card when it helps its faction
 // ============================================================================
-import { PHASE, CER } from '../shared/constants.js';
+import { PHASE, CER, FACTIONS, ROLE_BY_ID } from '../shared/constants.js';
 import { NAV_NODES, NAV_EDGES, PORTAL } from '../shared/map.js';
 import { wallsBetween } from '../shared/physics.js';
 import { pick, rand, dist2, weighted } from './util.js';
 
+export const BOT_NAMES = [
+  'Grubwick', 'Snivel', 'Mumblecowl', 'Torchnose', 'Wickles', 'Grimsby', 'Pudding', 'Sootfoot', 'Nubbin', 'Moldrick',
+  'Tallowmere', 'Gristle', 'Bonnet', 'Skulkin', 'Dribble', 'Hobnail', 'Crumbsworth', 'Wormwood', 'Fennick', 'Bramble',
+  'Clinker', 'Mopsy', 'Ashcrumb', 'Pockle', 'Ruffwick', 'Glimmer', 'Sprocket', 'Thimble', 'Murk', 'Ladle',
+];
 const NODES = Object.entries(NAV_NODES).map(([k, [x, z]]) => ({ k, x, z }));
 const ADJ = new Map(NODES.map(n => [n.k, []]));
 for (const [a, b] of NAV_EDGES) { ADJ.get(a).push(b); ADJ.get(b).push(a); }
@@ -50,7 +59,9 @@ export class Bots {
     const m = this.m;
     let made = 0;
     while (made < count) {
-      const r = m.addPlayer({ name: `Bot_${this.seq++}`, isBot: true });
+      const used = new Set(m.list.map(q => q.name));
+      const free = BOT_NAMES.filter(n => !used.has(n));
+      const r = m.addPlayer({ name: free.length ? pick(free) : `Minion_${this.seq++}`, isBot: true });
       if (r.error) break;
       this.adopt(m.P(r.id)); made++;
     }
@@ -118,12 +129,13 @@ export class Bots {
       const need = 2 - m.npcs.altar().length;
       const ch = m.npcs.chamber();
       if (need > 0 && ch.length && !m.npcs.spyActive) {
-        const n = ch[0];
+        const n = mode === 'human' ? this.bestCaptive(p, ch) : ch[0];
         if (this.navTo(p, { x: n.x, z: -21.4 }, dt, input) || dist2(p.body, n) < 2.2) m.npcs.lmb(p, n.id);
         return;
       }
     }
-    if (mode !== 'roamer') return;
+    if (mode === 'human') this.tryAbility(p, dt);
+    if (mode !== 'roamer' && mode !== 'human') return;
     if (B.state === 'pick') {
       const tasks = [...m.tasks.active.values()];
       if (!tasks.length) return;
@@ -155,24 +167,28 @@ export class Bots {
     if (B.cerKey !== key) { B.cerKey = key; B.decT = rand(1.0, 2.4); B.done = false; B.victim = null; B.goal = null; }
     B.decT -= dt;
     const ready = B.decT <= 0 && !B.done;
-    const mode = m.dbg.botMode;
+    const mode = m.dbg.botMode, human = mode === 'human';
+    if (human) this.tryAbility(p, dt);
     switch (cer.sub) {
       case CER.NOMINATE:
-        if (p.id === m.masterId && ready) { const el = m.eligibleExec(); if (el.length) { cer.nominate(pick(el).id); B.done = true; } }
+        if (p.id === m.masterId && ready) { const el = m.eligibleExec(); if (el.length) { cer.nominate((human ? this.mostTrusted(p, el) : pick(el)).id); B.done = true; } }
         break;
       case CER.VOTE:
         if (ready && cer.isVoter(p)) {
-          const v = mode === 'idle' ? 0 : weighted([[0, 74], [1, 19], [2, 7]]);
+          let v;
+          if (mode === 'idle') v = 0;
+          else if (human) v = this.wantsMutiny(p) ? Math.min(p.crystals, weighted([[1, 30], [2, 45], [3, 25]])) : 0;
+          else v = weighted([[0, 74], [1, 19], [2, 7]]);
           cer.vote(p, Math.min(v, p.crystals)); B.done = true;
         }
         break;
       case CER.REACTION:
-        if (cer.fanatical?.pending && cer.fanatical.target === p.id && ready) { cer.fanaticalReply(p, Math.random() < 0.5); B.done = true; }
+        if (cer.fanatical?.pending && cer.fanatical.target === p.id && ready) { cer.fanaticalReply(p, human ? this.wantsMutiny(p) : Math.random() < 0.5); B.done = true; }
         break;
       case CER.EXECUTION:
         if (p.id === m.execId && B.decT <= 0) {
           if (!p.carryingNpc) {
-            const n = B.victim ? m.npcs.npcs.get(B.victim) : pick(m.npcs.altar());
+            const n = B.victim ? m.npcs.npcs.get(B.victim) : (human ? this.bestCaptive(p, m.npcs.altar()) : pick(m.npcs.altar()));
             if (!n || n.state !== 'altar') { B.victim = null; break; }
             B.victim = n.id;
             if (this.navTo(p, { x: n.x, z: n.z + 1.0 }, dt, input) || dist2(p.body, n) < 2.2) m.npcs.lmb(p, n.id);
@@ -187,16 +203,105 @@ export class Bots {
         break;
       case CER.EVENT:
         if (p.id !== m.masterId || B.decT > 0) break;
-        if (['INSPECTION', 'MUTENESS', 'FLOGGING'].includes(cer.mode) && !B.done) { const c = cer.slapCandidates(p.id); if (c.length) cer.eventSlap(pick(c)); B.done = true; }
+        if (['INSPECTION', 'MUTENESS', 'FLOGGING'].includes(cer.mode) && !B.done) {
+          const c = cer.slapCandidates(p.id);
+          // humanlike: investigate unknowns, silence suspects
+          const t = !human ? pick(c) : cer.mode === 'MUTENESS' ? this.leastTrusted(p, c) : (pick(c.filter(q => this.trust(p, q) === 0)) || pick(c));
+          if (t) cer.eventSlap(t); B.done = true;
+        }
         if (cer.mode === 'LIVING') {
           if (!p.carryingPlayer) {
             let v = B.victim && m.P(B.victim);
-            if (!v || v.ghost) { v = pick(cer.slapCandidates(p.id)); B.victim = v?.id; }
+            if (!v || v.ghost) { v = human ? this.livingVictim(p, cer.slapCandidates(p.id)) : pick(cer.slapCandidates(p.id)); B.victim = v?.id; }
             if (v && (this.navTo(p, v.body, dt, input) || dist2(p.body, v.body) < 2.2)) cer.liftLiving(p, v);
           } else if (this.navTo(p, { x: 0, z: 3.2 }, dt, input) || m.nearPortal(p, 5)) cer.lmb(p, null);
         }
         break;
       default: break;
     }
+  }
+
+  // ================================================================ Humanlike reasoning
+  /** +1 known ally, −1 known enemy, 0 unknown (only uses information this bot legitimately has). */
+  trust(b, t) {
+    if (!t || t === b) return 1;
+    const f = b.faction;
+    let k = b.known.get(t.id);
+    if (!k && b.origFaction === FACTIONS.BLOOD && f === FACTIONS.BLOOD && t.origFaction === FACTIONS.BLOOD) k = FACTIONS.BLOOD;   // Blood Pact
+    if (k) return k === f ? 1 : -1;
+    if (t.publicNot && t.publicNot === f) return -1;
+    return 0;
+  }
+  mostTrusted(b, list) { const best = Math.max(...list.map(q => this.trust(b, q))); return pick(list.filter(q => this.trust(b, q) === best)); }
+  leastTrusted(b, list) { const w = Math.min(...list.map(q => this.trust(b, q))); return pick(list.filter(q => this.trust(b, q) === w)); }
+
+  /** Rebel when the ruling duo looks hostile; decided once per nomination. */
+  wantsMutiny(b) {
+    const m = this.m, B = b.brain, key = `${m.ceremonyIndex}:${m.masterId}:${m.execId}`;
+    if (B.mutKey === key) return B.mutiny;
+    const s = this.trust(b, m.P(m.masterId)) + this.trust(b, m.P(m.execId));
+    B.mutKey = key; B.mutiny = s < 0 ? true : s > 0 ? false : Math.random() < 0.22;
+    return B.mutiny;
+  }
+
+  /** Captive score from the bot's cult's point of view (requires glyph knowledge; unknown = 0). */
+  captiveScore(b, n) {
+    if (!b.knownNpcs.has(n.id)) return 0;
+    const T = this.m.tally, f = b.faction;
+    if (f === FACTIONS.CHAOS) {
+      if (n.faction === FACTIONS.CHAOS) return 2;
+      return T[n.faction] < Math.max(T.fire, T.blood) ? 1 : -1;     // nudge Fire/Blood towards a tie
+    }
+    if (n.faction === f) return 3;
+    if (n.faction === FACTIONS.CHAOS) return 0;
+    return -2;
+  }
+  bestCaptive(b, list) {
+    if (!list.length) return null;
+    const best = Math.max(...list.map(n => this.captiveScore(b, n)));
+    return pick(list.filter(n => this.captiveScore(b, n) === best));
+  }
+  livingVictim(b, cands) {
+    const m = this.m, L = m.chaosLeaderId;
+    if (b.faction === FACTIONS.CHAOS && b.id !== L && b.known.has(L)) { const l = cands.find(q => q.id === L); if (l) return l; }  // throw our own Leader = instant win
+    const pool = cands.filter(q => this.trust(b, q) <= 0);
+    return this.leastTrusted(b, pool.length ? pool : cands);
+  }
+
+  /** Fire the role card when it helps this bot's cult. Throttled; runs in Work and Ceremony. */
+  tryAbility(b, dt) {
+    const m = this.m, B = b.brain, R = m.roles, cer = m.cer;
+    B.abilT = (B.abilT ?? (2 + Math.random() * 4)) - dt;
+    if (B.abilT > 0 || b.cardUsed || b.ghost) return;
+    B.abilT = 1.5 + Math.random() * 2.5;
+    if (!R.check(b).ok) return;
+    const others = m.living.filter(q => q !== b);
+    const enemy = l => this.leastTrusted(b, l), ally = l => this.mostTrusted(b, l);
+    const valid = (f, l) => l.filter(q => R.validTarget(b, f, q));
+    const want = m.phase === PHASE.CEREMONY && m.execId ? this.wantsMutiny(b) : null;
+    const total = cer.total ? cer.total() : 0, th = cer.threshold;
+    let t = null;
+    switch (b.roleId) {
+      case 1: { const v = valid('other_los', others).filter(q => q.crystals > 0 && this.trust(b, q) <= 0); if (v.length) t = [enemy(v).id]; break; }
+      case 3: if (b.crystals >= 2 && Math.random() < 0.3) t = []; break;
+      case 5: if (Math.random() < 0.5) t = []; break;
+      case 11: case 16: if (m.phase === PHASE.WORK && Math.random() < 0.15) t = []; break;
+      case 17: { const v = valid('used_card', others).filter(q => this.trust(b, q) > 0); if (v.length) t = [v[0].id]; break; }
+      case 18: { const v = others.filter(q => q.crystals > 0 && this.trust(b, q) <= 0); if (v.length >= 2) t = [v[0].id, v[1].id, b.id]; break; }
+      case 8: { const ex = valid('exhausted', m.list).filter(q => this.trust(b, q) > 0); const tgt = others.filter(q => !q.exhausted && this.trust(b, q) <= 0); if (ex.length && tgt.length) t = [ex[0].id, enemy(tgt).id]; break; }
+      case 13: { const el = valid('eligible_exec', m.list); if (el.length) { const a = ally(el); if (this.trust(b, a) > 0) t = [a.id]; } break; }
+      case 6: if (want === false) { const v = others.filter(q => cer.isVoter(q) && this.trust(b, q) <= 0); if (v.length >= 2) t = [v[0].id, v[1].id]; } break;
+      case 12: if (want) { const v = others.filter(q => cer.isVoter(q) && q.crystals > 0); if (v.length >= 2) t = [v[0].id, v[1].id]; } break;
+      case 14: if (want && this.trust(b, m.P(m.masterId)) < 0) t = []; break;
+      case 19: { const duo = [m.P(m.masterId), m.P(m.execId)].filter(Boolean); const e = duo.find(q => this.trust(b, q) < 0 && q.crystals > 0); if (e) t = [e.id]; break; }
+      case 20: if (want) t = []; break;
+      case 2: if (want) { const v = valid('rebel', m.list); if (v.length && total < th) t = [ally(v).id]; } break;
+      case 4: if (want === false && total >= th) { const v = valid('rebel', m.list); if (v.length) t = [v.sort((x, y) => (cer.final.get(y.id) || 0) - (cer.final.get(x.id) || 0))[0].id]; } break;
+      case 10: if ((cer.final?.get(b.id) || 0) > 0) t = []; break;
+      case 15: if (want && total < th && total >= Math.ceil(th / 2)) t = []; break;
+      case 21: if (want && total < th) { const v = others.filter(q => cer.isVoter(q) && q.crystals > 0 && this.trust(b, q) >= 0); if (v.length) t = [v[0].id]; } break;
+      default: break;
+    }
+    if (t) R.use(b, t);
   }
 }

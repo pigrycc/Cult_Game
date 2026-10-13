@@ -41,7 +41,7 @@
 | `LOBBY` | server start / "return to lobby" | host START with ≥5 → `LOBBY_LOCKED`, deal |
 | `STATE_REVEAL_SCREEN` | deal factions (table §7.1), unique roles 1–21, random Master | 5 s back + 5 s front |
 | `STATE_GAMEPLAY_WORK` | teleport, 3 captives seated, task pool filled, Red Bar running | Yellow hits milestone → CEREMONY · Red hits it first → FINALE (everyone loses) |
-| `STATE_CEREMONY` | Red frozen, barriers up | debate timer ends → WORK; FINAL milestone or Chaos-Leader living sacrifice → FINALE |
+| `STATE_CEREMONY` | Red frozen, barriers up | debate timer ends → WORK; FINAL milestone, Chaos-Leader living sacrifice, or mathematical sudden death (checked only after the Living Sacrifice outcome: Fire/Blood lead > every rival + remaining sacrifices) → FINALE |
 | `STATE_FINALE` | winner by altar majority, tie → Chaos | host → LOBBY |
 
 Ceremony sub-states: `ANNOUNCE (3 s) → NOMINATE → VOTE → COUNT → REACTION → RESULT → (success → NOMINATE again | fail → EXECUTION) → RESULT → CURSE → RESULT → EVENT → RESULT → DEBATE`.
@@ -57,7 +57,7 @@ Freezing / blinding per sub-state is centralised in `Ceremony.applyFreeze()`.
 | `NpcSystem` | captive pool (every captive rolls a faction AND a mandatory curse: Mana Boost, Mana Drain, Toxic Fumes, Insight Eye, Gagging Seal; debug toggle adds Call of the Abyss / Dark Initiation), Selection Chamber, altar, Prison, glyph authorisation (fog of war), spyhole |
 | `Ceremony` | nomination, mutiny resolution, execution, curses, milestone events, debate, exhaustion |
 | `Roles` | 21 card abilities with timing windows + target validation, `roleRevealed` broadcast |
-| `Bots` | FSM bots (idle / roamer / voter) with A* over a nav-node graph; always perform Master/Executioner duties |
+| `Bots` | FSM bots (idle / roamer / voter / humanlike) with A* over a nav-node graph and thematic names; always perform Master/Executioner duties. Humanlike bots reason with their legitimate knowledge (Blood Pact, inspections, flogging) to vote, pick captives/executioners/victims and play role cards |
 | `Debug` | every Dev-Console command, host-authorised |
 | `GameServer` | transport, per-viewer filtering, voice routing |
 
@@ -80,7 +80,9 @@ state {phase, you{private}, players[ filtered ], gates{per viewer}, bars, track,
 reveal {faction, roleId, back, front}      roleRevealed {id, roleId, name}   ← RPC_BroadcastRoleRevealed
 toast | big | fx | chat {from,name,text,ch} | label {id,text,color,dur} | coins | finale {winner, reason, tally, reveal[], log[]}
 recipe | calibUI | runesUI | spyhole {list} | fanaticalOffer | converted
-holdEnd {reason: 'done'|'cancel', target}   ← drives the hold-meter success / cancel feedback
+holdEnd {reason: 'done'|'cancel', target}
+errorFlash {text}  ← buzzer + red banner (e.g. nominating an exhausted minion)
+big.avatars [{name,color}]  ← coloured minion portraits on banners (2 = nominator ➜ nominee); fx 'appoint' {id, office} = pillar of light + herald   ← drives the hold-meter success / cancel feedback
 ```
 `flags` bits: 1 frozen · 2 carried · 4 riding · 8 ghost · 16 working · 32 grounded.
 

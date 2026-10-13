@@ -141,7 +141,15 @@ export class TaskManager {
     else if (p.heldTool) this.dropTool(p);
     else if (p.carryHandle) this.releaseHandle(p);
   }
-  spawnCoins(x, z, amount) { const id = 'c' + (UID++); this.coins.set(id, { id, x: x + rand(-0.4, 0.4), z: z + rand(-0.4, 0.4), amount }); }
+  /** Scatter `amount` gold as individual coin piles (max 10) around the impact point; each is picked up with a short [E] hold. */
+  spawnCoins(x, z, amount) {
+    const n = Math.max(1, Math.min(10, amount));
+    const base = Math.floor(amount / n); let extra = amount - base * n;
+    for (let i = 0; i < n; i++) {
+      const id = 'c' + (UID++), a = Math.random() * Math.PI * 2, r = 0.35 + Math.random() * 0.9;
+      this.coins.set(id, { id, x: x + Math.cos(a) * r, z: z + Math.sin(a) * r, amount: base + (extra-- > 0 ? 1 : 0) });
+    }
+  }
 
   addLard() {
     const used = new Set([...this.lard.values()].map(l => l.i));
@@ -223,11 +231,19 @@ export class TaskManager {
 
   // ---------------------------------------------------------------- USE (E press)
   use(p, target) {
-    if (this.m.phase !== PHASE.WORK && !(this.m.phase === PHASE.CEREMONY && target.startsWith('coin:'))) return;
+    if (this.m.phase !== PHASE.WORK) return;
     if (p.frozen || p.body.ragdoll > 0 || p.carriedBy) return;
     if (target.startsWith('tool:')) return this.pickTool(p, target.slice(5));
     if (target.startsWith('item:')) return this.pickItem(p, target.slice(5));
-    if (target.startsWith('coin:')) { const c = this.coins.get(target.slice(5)); if (c && dist2(p.body, c) < 2.5) { p.gold += c.amount; this.coins.delete(c.id); this.m.send(p.id, { t: 'coins', amount: c.amount }); } return; }
+    if (target.startsWith('coin:')) {
+      const c = this.coins.get(target.slice(5));
+      if (!c || dist2(p.body, c) > 2.6) return;
+      p.hold = { target, uid: null, need: this.m.timers.coinPickup, pos: { x: c.x, y: 0.1, z: c.z }, onDone: () => {
+        if (!this.coins.has(c.id)) return this.m.toast(p.id, 'Someone grabbed those coins first!');
+        p.gold += c.amount; this.coins.delete(c.id); this.m.send(p.id, { t: 'coins', amount: c.amount });
+      } };
+      return;
+    }
     if (target === 'door_out' || target === 'door_in') {
       const pos = target === 'door_out' ? { x: 3.5, y: 1.1, z: 17.4 } : { x: 4.5, y: 1.1, z: 17.4 };
       if (!this.inRange(p, pos)) return;
@@ -549,9 +565,6 @@ export class TaskManager {
   tickHazardsOnly() { /* ceremony: hazards paused (Red Bar frozen) */ }
 
   tickItems(dt) {
-    for (const p of this.m.list) for (const c of [...this.coins.values()]) {
-      if (dist2(p.body, c) < 0.9 && p.body.ragdoll <= 0) { p.gold += c.amount; this.coins.delete(c.id); this.m.send(p.id, { t: 'coins', amount: c.amount }); }
-    }
     for (const t of this.tools.values()) {
       if (t.heldBy) { const p = this.m.P(t.heldBy); if (!p || p.heldTool !== t.id) t.heldBy = null; continue; }
       if (dist2(t, t.home) > 0.5) { t.idle += dt; if (t.idle > 45) Object.assign(t, { x: t.home.x, y: t.home.y, z: t.home.z, idle: 0 }); }

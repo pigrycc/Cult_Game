@@ -58,6 +58,8 @@ export class Audio {
       case 'tick': this.tone(1000, 0.04, 'square', 0.05); break;
       case 'holdtick': this.tone(520, 0.03, 'triangle', 0.04); break;
       case 'holddone': this.tone(880, 0.12, 'triangle', 0.18); setTimeout(() => this.tone(1320, 0.22, 'triangle', 0.16), 90); break;
+      case 'appoint': [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => { this.tone(f, 0.5, 'triangle', 0.2); this.tone(f * 1.5, 0.4, 'sine', 0.06); }, i * 110)); setTimeout(() => this.tone(1047, 1.4, 'sine', 0.18), 480); break;
+      case 'buzz': this.tone(110, 0.45, 'sawtooth', 0.25); this.tone(116, 0.45, 'square', 0.12); break;
       case 'cancel': this.tone(300, 0.22, 'square', 0.1, 0.5); break;
       case 'fumes': this.noise(2, 0.15, 300); break;
       case 'clank': this.tone(180, 0.2, 'square', 0.15, 0.6); break;

@@ -52,8 +52,6 @@ export const ROLES = [
   { id: 6, name: 'Silence Enchanter', icon: '🤫', windows: ['VOTE'],
     targets: [{ label: 'First player to seal', filter: 'other' }, { label: 'Second player to seal', filter: 'other' }],
     desc: 'Right after the Executioner is nominated: point at two players. They are sealed and cannot play a single crystal in the upcoming rebellion.' },
-  { id: 7, name: 'Dungeon Look-Out', icon: '🔭', windows: ['WORK'], targets: [],
-    desc: 'Work Phase: for 25 seconds you see every minion through walls (and the Master of Ceremonies is highlighted in gold).' },
   { id: 8, name: 'Embalmer', icon: '⚱️', windows: ['NOMINATE'],
     targets: [{ label: 'Exhausted player to cleanse', filter: 'exhausted' }, { label: 'Player who receives Exhaustion', filter: 'other' }],
     desc: 'Before the Executioner is designated: move the "Exhausted" status from an exhausted player onto any other player.' },
@@ -91,6 +89,49 @@ export const ROLES = [
     desc: 'Reaction Time: point at a player — they may immediately throw ALL their remaining crystals into the rebellion. If they refuse, your card flips back face down.' },
 ];
 export const ROLE_BY_ID = Object.fromEntries(ROLES.map(r => [r.id, r]));
+
+// ---------------------------------------------------------------------------
+// Card copy: WHEN (activation condition, top of the card) + TEXT (short effect,
+// below the icon). Text is computed from the live match state (ctx).
+//   ctx = { threshold: base mutiny threshold, players: player count }
+// ---------------------------------------------------------------------------
+const W_ANY = 'Any time', W_WD = 'Any time during the Work Phase or the Debate',
+  W_REACT = 'Immediately after the mutiny crystals are revealed',
+  W_AFTER_NOM = 'Right after the Master nominates an Executioner',
+  W_BEFORE_NOM = 'Before the Master nominates an Executioner',
+  W_CELL = 'Work Phase — before the Master enters the Selection Chamber';
+const ROLE_COPY = {
+  1: { when: W_WD, text: () => 'Steal 1 Mana Crystal from a minion you can see.' },
+  2: { when: W_REACT, text: () => 'Crystals played by one chosen rebel count double.' },
+  3: { when: `${W_WD} (costs 1 crystal)`, text: () => 'After every successful mutiny you join, 1 of your played crystals comes back.' },
+  4: { when: W_REACT, text: () => "One chosen rebel's crystals go back to their pouch and don't count." },
+  5: { when: W_ANY, text: () => 'Gain 2 Mana Crystals.' },
+  6: { when: W_AFTER_NOM, text: () => 'Two chosen minions cannot play any crystals in this mutiny.' },
+  8: { when: W_BEFORE_NOM, text: () => 'Move the Exhausted status from one minion onto another.' },
+  9: { when: W_CELL, text: () => 'Peek at one captive and optionally drop it through the trapdoor (15 s).' },
+  10: { when: W_REACT, text: () => "If the mutiny succeeds and you don't become Master, your crystals come back." },
+  11: { when: W_CELL, text: () => 'A 4th captive appears in the cell — the Master discards two.' },
+  12: { when: W_AFTER_NOM, text: () => 'Two chosen minions must play at least 1 crystal.' },
+  13: { when: W_BEFORE_NOM, text: () => 'You choose the Executioner instead of the Master.' },
+  14: { when: W_AFTER_NOM, text: () => 'The Master is dethroned — the minion with the fewest turns as Master takes the staff.' },
+  15: { when: W_REACT, text: c => `A successful mutiny requires ${ceilHalf(c.threshold)} crystal${ceilHalf(c.threshold) === 1 ? '' : 's'} instead of ${c.threshold}.` },
+  16: { when: W_CELL, text: () => 'All captives drop into the trapdoor and 3 new ones are drawn.' },
+  17: { when: W_ANY, text: () => 'A chosen player may use their character ability a second time.' },
+  18: { when: 'During the Debate, after a Chaos captive was sacrificed', text: () => 'Two chosen minions each give 1 crystal to a minion of your choice.' },
+  19: { when: W_AFTER_NOM, text: () => 'The Master or the Executioner must give 1 crystal to the other.' },
+  20: { when: W_AFTER_NOM, text: c => `This mutiny needs just 1 crystal instead of ${c.threshold} — but nobody may play more than 1.` },
+  21: { when: W_REACT, text: () => 'A chosen minion may throw ALL their crystals in. If they refuse, your card returns to you.' },
+};
+export function roleCard(id, ctx = {}) {
+  const r = ROLE_BY_ID[id], c = ROLE_COPY[id];
+  if (!r || !c) return { when: '', text: r?.desc ?? '' };
+  return { when: c.when, text: c.text({ threshold: ctx.threshold ?? 3, players: ctx.players ?? 5 }) };
+}
+export const FACTION_OBJECTIVE = {
+  fire: 'Secure a strict majority of 🔥 Fire sacrifices in the portal at the final tally — or lock an unbeatable lead right after the Living Sacrifice (sudden death).',
+  blood: 'Secure a strict majority of 🩸 Blood sacrifices in the portal at the final tally — or lock an unbeatable lead right after the Living Sacrifice (sudden death).',
+  chaos: 'Force a TIE at the top of the final tally (e.g. Fire = Blood) — or get the Chaos Leader thrown into the portal during the Living Sacrifice (instant win).',
+};
 
 // ---------------------------------------------------------------------------
 // NPC curses (glyph SHAPE). Faction = glyph COLOR.
@@ -153,7 +194,7 @@ export const DEFAULT_TIMERS = {
   announce: 3, nominate: 7, vote: 6, count: 4, reaction: 5,
   execution: 25, eye: 6, abyss: 8, initiation: 10,
   inspection: 10, muteness: 10, flogging: 10, living: 25,
-  spyWindow: 15, lookout: 25, fumes: 45, taskRespawnDelay: 3,
+  spyWindow: 15, fumes: 45, taskRespawnDelay: 3, shoveImmunity: 6, coinPickup: 0.6,
   phaseTransitionBufferSeconds: 3,     // informational pause between major ceremony events
 };
 // Labels for the debug "Timers" section (seconds unless noted)
@@ -164,7 +205,8 @@ export const TIMER_LABELS = {
   eye: 'Insight Eye strike', abyss: 'Call of the Abyss', initiation: 'Dark Initiation',
   inspection: 'Robe Inspection', muteness: 'Curse of Muteness', flogging: 'Flogging', living: 'Living Sacrifice',
   phaseTransitionBufferSeconds: 'phaseTransitionBufferSeconds (outcome cards)',
-  spyWindow: 'Oubliette Spy window', lookout: 'Dungeon Look-Out vision', fumes: 'Toxic Fumes intoxication',
+  spyWindow: 'Oubliette Spy window', fumes: 'Toxic Fumes intoxication',
+  shoveImmunity: 'Shove immunity vs. same attacker', coinPickup: 'Coin pickup hold',
   taskRespawnDelay: 'Task respawn delay',
 };
 
@@ -182,7 +224,7 @@ export const CER = {
 };
 
 export const STATUS_ICONS = {
-  master: '👑', exec: '🪓', exhausted: '💤', muted: '🤐', gagged: '🔇', fumes: '🤢', ghost: '👻', key: '🗝️',
+  ward: '🛡️', master: '👑', exec: '🪓', exhausted: '💤', muted: '🤐', gagged: '🔇', fumes: '🤢', ghost: '👻', key: '🗝️',
 };
 
 export function ceilHalf(n) { return Math.ceil(n / 2); }

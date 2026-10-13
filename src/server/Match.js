@@ -44,7 +44,7 @@ export class Match {
       debugAll: !!opts.debugAll, freezeRed: false, redX: null, redT: 1.5, yellowMul: 1,
       debateSec: null, debateInfinite: false, maxConcurrent: null, mutinyThreshold: null,
       forcedEvent: null, forcedNpcs: null, forcedDuo: null, botMode: 'roamer',
-      workSec: null, holdMul: 1, extendedCurses: false,
+      workSec: null, holdMul: 1, extendedCurses: false, botSpeed: 1, noSprint: false, shoveDropPct: 30,
       forceFaction: new Map(), forceRole: new Map(),
     };
     this.bars = new ProgressBars(this);
@@ -86,7 +86,7 @@ export class Match {
       knownNpcs: new Set(), infiniteMana: false, godMode: false,
       hold: null, holdT: 0, heldTool: null, heldItem: null, load: null,
       carryingNpc: null, carryingPlayer: null, carriedBy: null, ridingOn: null, rider: null,
-      carryHandle: null, lookoutT: 0, shoveCd: 0, blind: false, wasAir: false, frozen: false,
+      carryHandle: null, shoveCd: 0, blind: false, wasAir: false, frozen: false,
       chatQ: [],
     };
     p.body.yaw = 0; // lobby: face the mirror (north)
@@ -118,8 +118,18 @@ export class Match {
   // ------------------------------------------------------------ messaging
   toast(pid, text, kind = 'info') { this.send(pid, { t: 'toast', text, kind }); }
   toastAll(text, kind = 'info') { for (const p of this.list) this.toast(p.id, text, kind); }
-  big(pid, text, sub = '', dur = 3, color = '#fff') { this.send(pid, { t: 'big', text, sub, dur, color }); }
-  bigAll(text, sub = '', dur = 3, color = '#fff') { for (const p of this.list) this.big(p.id, text, sub, dur, color); }
+  /** Center banner. avatars = [{name,color}] shown as coloured minion portraits (2 = nominator ➜ nominee). */
+  big(pid, text, sub = '', dur = 3, color = '#fff', avatars = null) { this.send(pid, { t: 'big', text, sub, dur, color, avatars }); }
+  bigAll(text, sub = '', dur = 3, color = '#fff', avatars = null) { for (const p of this.list) this.big(p.id, text, sub, dur, color, avatars); }
+  av(p) { return p ? { name: p.name, color: p.color } : null; }
+  /** A minion is appointed to a ceremony office: pillar of light + herald SFX for all, personal banner. */
+  appoint(p, office, by = null) {
+    if (!p) return;
+    this.fx('appoint', { id: p.id, office });
+    const title = office === 'master' ? 'MASTER OF CEREMONIES' : 'EXECUTIONER';
+    this.big(p.id, `YOU HAVE BEEN APPOINTED: ${title}`, office === 'master' ? 'You are the Master of Ceremonies! 👑' : `You are the Executioner! 🪓${by ? ' (chosen by ' + by.name + ')' : ''}`, 3.5, office === 'master' ? '#ffd75e' : '#ff8a6a', by ? [this.av(by), this.av(p)] : [this.av(p)]);
+  }
+  errorFlash(pid, text) { this.send(pid, { t: 'errorFlash', text }); }
   fx(type, data = {}) { for (const p of this.list) this.send(p.id, { t: 'fx', type, ...data }); }
   log(text) { this.publicLog.push({ t: Math.round(this.time), text }); if (this.publicLog.length > 40) this.publicLog.shift(); }
 
@@ -146,7 +156,7 @@ export class Match {
     this.setPhase(PHASE.REVEAL, this.timers.revealBack + this.timers.revealFront + 0.8);
     for (const p of this.list) {
       this.send(p.id, {
-        t: 'reveal', faction: p.faction, roleId: p.roleId,
+        t: 'reveal', faction: p.faction, roleId: p.roleId, threshold: this.cer.baseThreshold, players: n,
         back: this.timers.revealBack, front: this.timers.revealFront,
       });
     }
@@ -213,9 +223,10 @@ export class Match {
     this.bars.running = true;
     const m = this.P(this.masterId);
     if (m) {
-      this.big(m.id, '👑 You are the Master of Ceremonies', 'Fetch 2 of the 3 captives from the Selection Chamber (north) — LMB to lift, LMB at the altar to set down.', 6, '#ffd75e');
+      if (first) this.appoint(m, 'master');
+      else this.big(m.id, '👑 You are the Master of Ceremonies', 'Fetch 2 of the 3 captives from the Selection Chamber (north) — LMB to lift, LMB at the altar to set down.', 6, '#ffd75e');
     }
-    for (const p of this.list) if (p.id !== this.masterId) this.big(p.id, 'WORK PHASE', `Keep the crypt standing! Master of Ceremonies: ${m?.name ?? '?'}`, 3.5, '#ffe28a');
+    for (const p of this.list) if (p.id !== this.masterId) this.big(p.id, 'WORK PHASE', `Keep the crypt standing! ${m?.name ?? '?'} is the Master of Ceremonies`, 3.5, '#ffe28a', m ? [this.av(m)] : null);
     this.fx('gong');
   }
 
@@ -228,7 +239,6 @@ export class Match {
       if (!p.isBot && this.time - p.lastInputAt > 0.15) this.simulate(p, { fwd: 0, strafe: 0, yaw: p.body.yaw, pitch: p.body.pitch }, dt);
       p.shoveCd = Math.max(0, p.shoveCd - dt);
       if (p.fumesT > 0) { p.fumesT -= dt; if (p.fumesT > 0 && Math.random() < dt * 0.06 && p.body.ragdoll <= 0 && !p.frozen) this.ragdoll(p, 1.1, 2.5); }
-      if (p.lookoutT > 0) p.lookoutT -= dt;
     }
     this.bots.tick(dt);
     this.updateAttachments();
@@ -266,6 +276,7 @@ export class Match {
       locked: !!(p.carriedBy || p.ridingOn),
       noJump: !!p.heldItem && !!this.tasks.itemHeavy(p.heldItem),
     };
+    if (this.dbg.noSprint) inp = { ...inp, sprint: false };
     const was = b.onGround;
     stepBody(b, inp, dt, ctx);
     if (!was && b.onGround) this.tasks.onLanding(p);
@@ -281,6 +292,7 @@ export class Match {
     if (p.rider) m *= 0.8;
     if (p.carryingNpc || p.carryingPlayer) m *= 0.85;
     if (p.ghost) m *= 1.1;
+    if (p.isBot) m *= this.dbg.botSpeed ?? 1;
     return m;
   }
 
@@ -334,9 +346,19 @@ export class Match {
     const t = this.P(targetId);
     if (!t || t === p || p.shoveCd > 0 || p.frozen || p.body.ragdoll > 0 || p.carriedBy || p.ridingOn) return;
     if (dist2(p.body, t.body) > 2.0 || !inFront(p.body, t.body.x, t.body.z, 0.3)) return;
-    p.shoveCd = 4;
     if (t.frozen && this.phase === PHASE.CEREMONY) return;
+    // Anti-spam: the same attacker cannot shove the same minion again during its immunity window
+    if (t.lastShovedBy === p.id && this.time < (t.shoveImmuneUntil || 0)) {
+      return this.toast(p.id, `${t.name} is still recovering — immune to your shoves for ${Math.ceil(t.shoveImmuneUntil - this.time)}s.`, 'warn');
+    }
+    p.shoveCd = 4;
+    t.lastShovedBy = p.id; t.shoveImmuneUntil = this.time + this.timers.shoveImmunity;
     const dx = t.body.x - p.body.x, dz = t.body.z - p.body.z;
+    // Coin loss at the point of impact
+    const pct = Math.max(0, Math.min(100, this.dbg.shoveDropPct ?? 30));
+    let lost = Math.floor(t.gold * pct / 100);
+    if (!lost && pct > 0 && t.gold > 0) lost = 1;
+    if (lost) { t.gold -= lost; this.tasks.spawnCoins(t.body.x, t.body.z, lost); this.toast(t.id, `You were shoved and dropped ${lost} 💰!`, 'warn'); }
     this.ragdoll(t, 1.3, 6.5, dx, dz);
     this.fx('slap', { x: t.body.x, z: t.body.z });
   }

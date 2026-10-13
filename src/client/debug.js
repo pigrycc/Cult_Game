@@ -5,6 +5,13 @@
 import { ROLES, FACTIONS, CURSES, MILESTONE_EVENTS, CURSE_KEYS, TIMER_LABELS, DEFAULT_TIMERS } from '../shared/constants.js';
 import { TASKS, TASK_KEYS } from '../shared/tasks.js';
 
+// Configuration commands persisted to localStorage and re-applied automatically on the next start
+const PERSIST = new Set(['red_tick', 'freeze_red', 'yellow_mul', 'timescale', 'force_event', 'npc_config', 'debate_timer', 'max_concurrent',
+  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
+const STORE = 'crypt_debug_settings_v1';
+export function loadDebugSettings() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { return {}; } }
+function saveDebugSettings(o) { try { localStorage.setItem(STORE, JSON.stringify(o)); } catch { /* storage unavailable */ } }
+
 const opt = (v, l, sel) => `<option value="${v}" ${sel ? 'selected' : ''}>${l}</option>`;
 
 export class DebugMenu {
@@ -12,7 +19,31 @@ export class DebugMenu {
     this.net = net; this.el = document.getElementById('debug'); this.open = false; this.st = null; this.built = false; this.playersKey = '';
   }
   toggle() { this.open = !this.open; this.el.classList.toggle('hidden', !this.open); if (this.open) this.build(); return this.open; }
-  cmd(cmd, a = {}) { this.net.send({ t: 'debug', cmd, a }); }
+  cmd(cmd, a = {}) {
+    this.net.send({ t: 'debug', cmd, a });
+    if (cmd === 'reset_timers') { const o = loadDebugSettings(); delete o.set_timers; saveDebugSettings(o); return; }
+    if (cmd === 'npc_clear') { const o = loadDebugSettings(); delete o.npc_config; saveDebugSettings(o); return; }
+    if (!PERSIST.has(cmd)) return;
+    const o = loadDebugSettings();
+    if (cmd === 'set_timers') {
+      const prev = o.set_timers || { timers: {} };
+      const { applyNow, ...rest } = a;
+      o.set_timers = { ...prev, ...rest, timers: { ...prev.timers, ...(a.timers || {}) } };
+    } else o[cmd] = a;
+    saveDebugSettings(o);
+  }
+  /** Re-apply every saved override (host only, once per session). */
+  replaySaved(st) {
+    if (this.replayed || !st.you.debug || !st.you.host) return;
+    this.replayed = true;
+    const o = loadDebugSettings(), keys = Object.keys(o);
+    if (!keys.length) return;
+    for (const k of keys) {
+      if (k === 'spawn_bots' && st.phase !== 'LOBBY') continue;
+      this.net.send({ t: 'debug', cmd: k, a: o[k] });
+    }
+    this.net.send({ t: 'debug', cmd: 'note', a: { text: `Restored ${keys.length} saved debug setting(s)` } });
+  }
 
   playerOptions(includeNone = false) {
     const ps = this.st?.players || [];
@@ -36,7 +67,8 @@ export class DebugMenu {
       </details>
       <details open><summary>2. Bot Management</summary>
         <label>Spawn Bot Count <input type="range" id="dBots" min="0" max="10" value="${st.players.filter(p => p.bot).length}"><b id="dBotsV">${st.players.filter(p => p.bot).length}</b><button data-c="bots">Apply (lobby)</button></label>
-        <label>Bot Behaviour <select id="dBotMode">${[['idle', 'Dummy / Idle'], ['roamer', 'Random Task Roamer'], ['voter', 'Ceremony Auto-Voter']].map(([v, l]) => opt(v, l, d.botMode === v)).join('')}</select></label>
+        <label>Bot Behaviour <select id="dBotMode">${[['idle', 'Dummy / Idle'], ['roamer', 'Random Task Roamer'], ['voter', 'Ceremony Auto-Voter'], ['human', 'Humanlike (tasks, politics, role cards)']].map(([v, l]) => opt(v, l, d.botMode === v)).join('')}</select></label>
+        <label>Bot Movement Speed ×<input id="dBotSpd" type="number" step="0.1" min="0.1" max="4" value="${d.botSpeed ?? 1}" style="width:60px"><button data-c="botspeed">Set</button></label>
         <div class="small">Force Bot Role/Faction: pick the bot as Target in section 1.</div>
       </details>
       <details open><summary>3. Pacing & Progress Bars</summary>
@@ -63,6 +95,8 @@ export class DebugMenu {
         <label>Task Max Concurrent <input id="dMax" type="number" value="${d.maxConcurrent ?? ''}" placeholder="table" style="width:60px"><button data-c="max">Set</button></label>
       </details>
       <details><summary>6. Economy & Physical Statuses</summary>
+        <label><input type="checkbox" id="dNoSprint" ${d.noSprint ? 'checked' : ''}> Disable Sprint (Shift) for all players</label>
+        <label>Shove Coin Drop % <input type="range" id="dShove" min="0" max="100" step="5" value="${d.shoveDropPct ?? 30}"><b id="dShoveV">${d.shoveDropPct ?? 30}%</b></label>
         <label>Set Mana Crystals (target) <input id="dCry" type="number" min="0" max="5" value="${st.you.crystals}" style="width:50px"><button data-c="cry">Set</button></label>
         <label>Add / Remove Gold <input id="dGold" type="number" value="10" style="width:60px"><button data-c="gold">Apply</button></label>
         <label>Mutiny Threshold Override <input id="dMut" type="number" min="1" max="5" value="${d.mutinyThreshold ?? ''}" placeholder="table" style="width:60px"><button data-c="mut">Set</button></label>
@@ -77,6 +111,11 @@ export class DebugMenu {
           ${Object.keys(TIMER_LABELS).map(k => `<span>${TIMER_LABELS[k]} <small>(def ${DEFAULT_TIMERS[k]})</small></span><input data-timer="${k}" type="number" step="0.5" value="${d.timers?.[k] ?? DEFAULT_TIMERS[k]}">`).join('')}
         </div>
         <button data-c="timers">Apply timers</button> <button data-c="buffer0">Skip transition buffers (0 s)</button> <button data-c="timersreset">Reset defaults</button>
+      </details>
+      <details><summary>8. Saved settings</summary>
+        <div class="small">Every override above is saved locally and re-applied automatically when you host again.</div>
+        <div class="small">Saved: ${Object.keys(loadDebugSettings()).join(', ') || '— nothing yet —'}</div>
+        <button data-c="clearsaved" class="danger">Clear saved settings</button>
       </details>`;
     const v = id => document.getElementById(id)?.value;
     const tgt = () => +v('dTarget');
@@ -112,6 +151,8 @@ export class DebugMenu {
           this.cmd('set_timers', { timers, workSec: v('dTwork'), debateSec: v('dTdebate'), holdMul: v('dThold'), applyNow: true }); break;
         }
         case 'buffer0': this.cmd('set_timers', { timers: { phaseTransitionBufferSeconds: 0 } }); break;
+        case 'botspeed': this.cmd('bot_speed', { m: +v('dBotSpd') }); break;
+        case 'clearsaved': saveDebugSettings({}); this.build(); break;
         case 'timersreset': this.cmd('reset_timers'); setTimeout(() => this.build(), 300); break;
         default: break;
       }
@@ -120,6 +161,9 @@ export class DebugMenu {
     document.getElementById('dGod').onchange = e => this.cmd('god_mode', { on: e.target.checked });
     document.getElementById('dInf').onchange = e => this.cmd('infinite_mana', { pid: tgt(), on: e.target.checked });
     document.getElementById('dFreeze').onchange = e => this.cmd('freeze_red', { on: e.target.checked });
+    document.getElementById('dNoSprint').onchange = e => this.cmd('disable_sprint', { on: e.target.checked });
+    document.getElementById('dShove').oninput = e => { document.getElementById('dShoveV').textContent = e.target.value + '%'; };
+    document.getElementById('dShove').onchange = e => this.cmd('shove_drop', { pct: +e.target.value });
     document.getElementById('dBotMode').onchange = e => this.cmd('bot_mode', { mode: e.target.value });
     document.getElementById('dBots').oninput = e => { document.getElementById('dBotsV').textContent = e.target.value; };
     document.getElementById('dExtCur').onchange = e => this.cmd('extended_curses', { on: e.target.checked });
@@ -130,6 +174,7 @@ export class DebugMenu {
   update(st) {
     const first = !this.st;
     this.st = st;
+    this.replaySaved(st);
     if (this.open && (first || st.players.map(p => p.id + p.name).join() !== this.playersKey)) this.build();
   }
 }

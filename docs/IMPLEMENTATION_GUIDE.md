@@ -68,4 +68,5 @@ debate seconds, mutiny threshold, work-phase length and exhaustion count per pla
    and `Configure Selection Chamber NPCs` (e.g. Toxic Fumes) to test each branch.
 4. `Force Role` 1–21 + `Reset Role Cooldown` to test every card in its window.
 5. Section **7. Timers** overrides every countdown (reveal back/front, work-phase pace, nomination, mutiny voting, reaction, execution, events, debate, hold-time multiplier, `phaseTransitionBufferSeconds`); `Skip transition buffers` sets the outcome-card pause to 0.
-6. `Override Altar Tally` 2/2/1 before the last milestone → tie → Chaos win. `Trigger Crypt Explosion` → loss screen.
+6. Debug settings are saved in localStorage and re-applied automatically when you host again (section 8 lists / clears them). Also: bot movement speed, disable sprint, shove coin drop %, Humanlike bot mode.
+7. `Override Altar Tally` 2/2/1 before the last milestone → tie → Chaos win. `Trigger Crypt Explosion` → loss screen.

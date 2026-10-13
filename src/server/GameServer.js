@@ -193,7 +193,7 @@ export class GameServer {
       const e = {
         id: p.id, name: p.name, color: p.color, bot: p.isBot, ghost: p.ghost, crystals: p.crystals,
         master: p.id === m.masterId, exec: p.id === m.execId, exhausted: !!p.exhausted, muted: p.muted, gagged: p.gagged,
-        fumes: p.fumesT > 0, key: p.hasKey, publicNot: p.publicNot || null, rider: p.rider, ridingOn: p.ridingOn, carriedBy: p.carriedBy,
+        fumes: p.fumesT > 0, key: p.hasKey, ward: !!p.immuneChaos, publicNot: p.publicNot || null, rider: p.rider, ridingOn: p.ridingOn, carriedBy: p.carriedBy,
         tool: p.heldTool ? m.tasks.tools.get(p.heldTool)?.type : null, item: p.heldItem ? m.tasks.items.get(p.heldItem)?.type : null,
         load: p.load?.type || null, npc: p.carryingNpc, talking: p.lastVoice && m.time - p.lastVoice < 0.4,
         role: p.roleRevealed || god || p.id === v.id ? p.roleId : null,
@@ -215,10 +215,10 @@ export class GameServer {
       you: {
         id: v.id, faction: v.faction, roleId: v.roleId, cardUsed: v.cardUsed, roleRevealed: v.roleRevealed, crystals: v.crystals, gold: v.gold,
         ability: chk, hold: v.hold ? { t: r2(v.holdT), need: v.hold.need === Infinity ? 0 : v.hold.need, target: v.hold.target } : null,
-        frozen: v.frozen, blind: v.blind, lookout: v.lookoutT > 0, key: v.hasKey, god, infiniteMana: v.infiniteMana,
+        frozen: v.frozen, blind: v.blind, key: v.hasKey, god, infiniteMana: v.infiniteMana,
         debug: m.isDebugAllowed(v), host: v.id === m.hostId, leader: v.id === m.chaosLeaderId, fumes: r2(Math.max(0, v.fumesT)),
         muted: v.muted, gagged: v.gagged, shoveCd: r2(v.shoveCd), exhausted: !!v.exhausted, ghost: v.ghost,
-        speedMul: r2(m.speedMul(v)), noJump: !!v.heldItem && !!m.tasks.itemHeavy(v.heldItem),
+        speedMul: r2(m.speedMul(v)), noSprint: !!m.dbg.noSprint, noJump: !!v.heldItem && !!m.tasks.itemHeavy(v.heldItem),
       },
       players, gates,
       bars: m.bars.serialize(), track: m.track, milestones: m.bars.M,
