@@ -129,18 +129,21 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .held { font-size: 15px; text-shadow: 0 0 4px #000; }
 .statuses { display: flex; gap: 6px; flex-wrap: wrap; max-width: 40vw; }
 .statuses span { background: rgba(12,9,7,.75); border: 1px solid #5a4430; border-radius: 4px; padding: 2px 6px; font-size: 13px; }
-.roleCard { width: 210px; background: linear-gradient(#2a1e14, #140e0a); border: 2px solid #6a5030; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer; position: relative; }
+.roleCard { width: 290px; background: linear-gradient(#2a1e14, #140e0a); border: 2px solid #6a5030; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer; position: relative; }
 .roleCard.usable { border-color: #ffd75e; box-shadow: 0 0 18px #ffd75e; animation: glow 1.2s infinite alternate; }
 .roleCard.used { opacity: .55; }
 @keyframes glow { from { box-shadow: 0 0 6px #ffd75e; } to { box-shadow: 0 0 22px #ffd75e; } }
 .rcIcon { font-size: 30px; } .rcName { font-weight: bold; color: #ffcf66; } .rcState { font-size: 11px; opacity: .85; }
-.rcDesc { display: none; position: absolute; bottom: 105%; right: 0; width: 320px; background: #140e0a; border: 1px solid #6a5030; padding: 8px; font-size: 12px; text-align: left; }
-.roleCard:hover .rcDesc { display: block; }
+.rcWhen { font-size: 11px; color: #9ff4ff; border-bottom: 1px solid #4a3a2a; padding-bottom: 4px; margin-bottom: 2px; }
+.rcText { font-size: 12px; margin: 3px 0; line-height: 1.3; }
+.rcObj { display: none; font-size: 11px; text-align: left; margin-top: 6px; padding: 5px 6px; border-top: 2px solid var(--fc); background: rgba(0,0,0,.35); border-radius: 0 0 6px 6px; }
+.rcObj b { color: var(--fc); letter-spacing: 1px; }
+.roleCard:hover .rcObj { display: block; }
 #keysHelp { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); font-size: 11px; opacity: .55; white-space: nowrap; }
 
 /* ---------- reveal ---------- */
 #reveal { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity .7s; z-index: 10; }
-.cardWrap { position: relative; width: 300px; height: 440px; perspective: 1200px; }
+.cardWrap { position: relative; width: 320px; height: 500px; perspective: 1200px; }
 .card { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 1s cubic-bezier(.3,.1,.2,1); }
 .card.flipped { transform: rotateY(180deg); }
 .face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 16px; border: 3px solid #c8a040; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px; }
@@ -148,7 +151,10 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .crest { font-size: 130px; filter: drop-shadow(0 0 20px #fff8); }
 .runes { letter-spacing: 8px; color: #c8a040; margin-top: 18px; font-size: 22px; }
 .face.front { background: linear-gradient(#f2e6c4, #c8b088); color: #2a1a0a; transform: rotateY(180deg); }
-.rIcon { font-size: 90px; } .rName { font-size: 28px; font-weight: bold; margin: 6px 0; text-align: center; } .rNum { font-size: 12px; opacity: .6; }
+.rWhen { font-size: 13px; font-weight: bold; color: #5a3010; text-align: center; border-bottom: 1px solid #8a6a3a; padding-bottom: 8px; margin-bottom: 6px; }
+.rObj { margin-top: auto; font-size: 12px; text-align: center; padding: 8px; border-top: 3px solid var(--fc); background: rgba(40,20,5,.12); border-radius: 0 0 10px 10px; width: 100%; }
+.rObj b { color: var(--fc); letter-spacing: 1px; }
+.rIcon { font-size: 80px; } .rName { font-size: 28px; font-weight: bold; margin: 6px 0; text-align: center; } .rNum { font-size: 12px; opacity: .6; }
 .rDesc { font-size: 15px; text-align: center; margin-top: 10px; line-height: 1.35; }
 .cardGlow { position: absolute; left: 10%; right: 10%; bottom: -40px; height: 40px; filter: blur(30px); opacity: .9; border-radius: 50%; }
 .revealTitle { font-size: 34px; margin-top: 60px; letter-spacing: 3px; font-weight: bold; }
@@ -197,3 +203,16 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .sumGlyph { float: left; margin-right: 8px; }
 #debug .tgrid { display: grid; grid-template-columns: 1fr 64px; gap: 2px 6px; align-items: center; }
 #debug .tgrid input { width: 60px; }
+
+/* ---------- avatars, error banner, misc ---------- */
+.avc { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; margin: 0 2px; }
+.av { position: relative; display: inline-block; width: 26px; height: 26px; border-radius: 50% 50% 42% 42%; background: var(--c); box-shadow: inset 0 -4px 0 rgba(0,0,0,.25), 0 0 6px #000; }
+.av::after { content: ''; position: absolute; left: 5px; right: 5px; top: 8px; bottom: 3px; background: #000; border-radius: 50%; }
+.av i { position: absolute; z-index: 1; top: 13px; width: 4px; height: 4px; border-radius: 50%; background: #fff3a0; box-shadow: 0 0 4px #fff3a0; }
+.av i:first-child { left: 8px; } .av i:last-child { right: 8px; }
+.bigAv { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: 22px; margin-bottom: 6px; text-shadow: 0 0 6px #000; }
+.bigAv .av { width: 46px; height: 46px; } .bigAv .av::after { left: 9px; right: 9px; top: 14px; bottom: 5px; } .bigAv .av i { top: 23px; width: 6px; height: 6px; }
+.bigAv .av i:first-child { left: 15px; } .bigAv .av i:last-child { right: 15px; }
+.avArrow { font-size: 28px; color: #ffd75e; }
+#bigText.err .bigMain { animation: shake .3s 2; }
+.resLine { color: #ffe28a; opacity: 1; font-size: 14px; }

@@ -254,6 +254,36 @@ export class Game {
     if (m.type === 'gong' || m.type === 'milestone') this.gongT = 1.5;
     if (m.type === 'ouch') this.shake = 0.4;
     if (m.type === 'explosion') this.shake = 2;
+    if (m.type === 'appoint') this.spawnPillar(m.id, m.office);
+  }
+
+  /** Vertical pillar of light on a freshly appointed Master / Executioner (follows the minion). */
+  spawnPillar(id, office) {
+    const col = office === 'master' ? '#ffd75e' : '#ff6a4a';
+    const g = new THREE.Group();
+    const outer = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 16, 20, 1, true), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const inner = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 16, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+    outer.position.y = inner.position.y = 8;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 1.4, 28), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.8, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04;
+    const light = new THREE.PointLight(col, 25, 9, 1.4); light.position.y = 2;
+    g.add(outer, inner, ring, light);
+    if (id === this.myId) g.visible = false;   // your own ray is seen by everyone else; you get the banner + fanfare
+    this.scene.add(g);
+    (this.pillars ||= []).push({ id, g, outer, inner, ring, light, t: 0, life: 4.5 });
+      }
+  updatePillars(dt) {
+    if (!this.pillars) return;
+    for (let i = this.pillars.length - 1; i >= 0; i--) {
+      const P = this.pillars[i]; P.t += dt;
+      const pos = P.id === this.myId ? this.body : this.players.get(P.id)?.mesh.position;
+      if (pos) P.g.position.set(pos.x, 0, pos.z);
+      const k = P.t < 0.4 ? P.t / 0.4 : Math.max(0, 1 - (P.t - P.life + 1.2) / 1.2);
+      P.outer.material.opacity = 0.32 * k; P.inner.material.opacity = 0.55 * k * (0.8 + Math.sin(P.t * 12) * 0.2);
+      P.ring.material.opacity = 0.8 * k; P.ring.scale.setScalar(1 + Math.sin(P.t * 4) * 0.12); P.light.intensity = P.id === this.myId ? 0 : 25 * k;
+      P.outer.rotation.y += dt;
+      if (P.t >= P.life) { this.scene.remove(P.g); this.pillars.splice(i, 1); }
+    }
   }
 
   ctx() {
@@ -300,7 +330,12 @@ export class Game {
     for (const n of st.npcs) {
       nids.add(n.id);
       let e = this.npcs.get(n.id);
-      if (!e) { e = { mesh: makeMinion('#6b6660', { npc: true }) }; e.mesh.position.set(n.x, 0, n.z); this.scene.add(e.mesh); this.npcs.set(n.id, e); }
+      if (!e) {
+        e = { mesh: makeMinion('#6b6660', { npc: true }) }; e.mesh.position.set(n.x, 0, n.z); this.scene.add(e.mesh); this.npcs.set(n.id, e);
+        // selection highlight (shown only to the Master while the captive waits in the Selection Chamber)
+        e.glow = new THREE.Mesh(new THREE.SphereGeometry(0.62, 14, 10), new THREE.MeshBasicMaterial({ color: '#ffd75e', transparent: true, opacity: 0.3, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+        e.glow.scale.set(1, 1.35, 1); e.glow.position.y = 0.62; e.glow.visible = false; e.mesh.add(e.glow);
+      }
       e.n = n;
     }
     for (const [id, e] of this.npcs) if (!nids.has(id)) { this.scene.remove(e.mesh); this.npcs.delete(id); }
@@ -395,7 +430,7 @@ export class Game {
       for (const i of st.world.items) if (!i.heldBy) { const bp = i.wild ? this.booksPos.get(i.id) || i : i; out.push({ id: 'item:' + i.id, x: bp.x, y: bp.y + 0.2, z: bp.z, label: i.wild ? 'Catch the biting book! [E]' : `Pick up ${ITEM_TYPES[i.type].name} [E]`, range: i.wild ? 2.8 : 2.6 }); }
     }
     if (st.phase !== PHASE.LOBBY) out.push(STATIC_TARGETS[1]);
-    for (const c of st.world.coins) out.push({ id: 'coin:' + c.id, x: c.x, y: 0.1, z: c.z, label: `Grab ${c.amount} 💰 [E]`, range: 2.4 });
+    if (working) for (const c of st.world.coins) out.push({ id: 'coin:' + c.id, x: c.x, y: 0.1, z: c.z, label: `Pick up ${c.amount} 💰 (hold E)`, range: 2.6, hold: true, need: this.st.dbg?.timers?.coinPickup ?? 0.6, verb: `Picking up ${c.amount} 💰` });
     for (const [id, e] of this.npcs) { const p = e.mesh.position; out.push({ id: 'npc:' + id, kind: 'npc', npc: e.n, x: p.x, y: p.y + 0.8, z: p.z, label: '', range: 2.8 }); }
     const c = st.cer;
     const farPick = c && c.sub === CER.NOMINATE && st.masterId === you.id;
@@ -463,7 +498,7 @@ export class Game {
     for (let i = 0; i < subs; i++) {
       const inp = {
         seq: ++this.seq, dt: this.rawDt / subs, fwd: k('KeyW') - k('KeyS'), strafe: k('KeyD') - k('KeyA'),
-        yaw: this.yaw, pitch: this.pitch, jump: !!k('Space') && i === 0, sprint: !!k('ShiftLeft'),
+        yaw: this.yaw, pitch: this.pitch, jump: !!k('Space') && i === 0, sprint: !!k('ShiftLeft') && !you.noSprint,
       };
       if (!playing) { inp.fwd = inp.strafe = 0; inp.jump = false; }
       if (!this.selfLocked) { stepBody(this.body, inp, inp.dt, this.ctx()); this.pending.push(inp); if (this.pending.length > 160) this.pending.shift(); }
@@ -491,14 +526,11 @@ export class Game {
     this.selfRagdoll = rag;
 
     // ---- remote minions
-    const lookout = you.lookout;
     for (const [id, e] of this.players) {
       const s = this.interp(id); if (!s) continue;
       e.mesh.position.set(s.x, s.y, s.z); e.mesh.rotation.y = s.yaw;
       e.mesh.visible = !(st.phase === PHASE.REVEAL);
       animateMinion(e.mesh, dt, { speed: s.speed, ragdoll: s.rag, spin: s.spin, working: !!(s.flags & 16), carried: !!(s.flags & 2), lifting: !!(e.p?.npc) || this.isCarryingPlayer(id), holdingFront: !!e.p?.item, fumes: e.p?.fumes });
-      e.mesh.userData.xray.visible = !!lookout;
-      e.mesh.userData.xray.material.color.set(e.p?.master ? '#ffd700' : '#ff5a5a');
     }
     // ---- captives
     for (const [, e] of this.npcs) {
@@ -513,6 +545,9 @@ export class Game {
       e.mesh.rotation.y = n.state === 'altar' ? Math.atan2(n.x, n.z) : carried ? this.yaw : 0;
       animateMinion(e.mesh, dt, { speed: 0, carried, sitting: n.state === 'chamber' });
       e.mesh.visible = !(n.carrier === this.myId);
+      const glow = st.phase === PHASE.WORK && st.masterId === this.myId && n.state === 'chamber' && !(st.spy.active && st.spy.id !== this.myId);
+      e.glow.visible = glow;
+      if (glow) e.glow.material.opacity = 0.22 + Math.sin(this.time * 4 + n.id) * 0.12;
     }
     // carry objects / wild books
     for (const [uid, o] of this.carryObjs) { const t = this.carryTarget?.get(uid) || o.userData.target; if (t) { o.position.x += (t.x - o.position.x) * Math.min(1, dt * 10); o.position.z += (t.z - o.position.z) * Math.min(1, dt * 10); } }
@@ -533,6 +568,7 @@ export class Game {
     if (this.world.gong) { this.gongT = Math.max(0, (this.gongT || 0) - dt); this.world.gong.parent.rotation.z = Math.sin(this.time * 8) * 0.06 * this.gongT; }
     if (this.world.capstan) { const t = st.tasks.find(x => x.key === 'capstan'); if (t && t.progress > 0) this.world.capstan.rotation.y += dt * 1.2; }
     this.fx.update(dt);
+    this.updatePillars(this.rawDt);
 
     // ---- targeting / prompts
     this.target = playing && !you.blind ? this.pickTarget() : null;
@@ -600,7 +636,7 @@ export class Game {
       v.set(pos.x, pos.y + 1.55, pos.z).project(this.camera);
       const d = this.camera.position.distanceTo(pos);
       let visible = isFinite(v.x) && isFinite(v.y) && d > 0.3 && v.z < 1 && d < 32 && st.phase !== PHASE.REVEAL && !you.blind;
-      if (visible && !you.god && !you.lookout && wallsBetween(this.camera.position.x, this.camera.position.z, pos.x, pos.z, 1) > 0) visible = false;
+      if (visible && !you.god && wallsBetween(this.camera.position.x, this.camera.position.z, pos.x, pos.z, 1) > 0) visible = false;
       const lab = this.ui.labels.filter(l => l.id === id).pop();
       const bub = this.ui.bubbles.get(id);
       // LOD: detailed card only when < 3 m AND looking directly at the minion

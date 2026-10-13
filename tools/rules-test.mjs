@@ -1,6 +1,7 @@
 // Rule-level assertions on the authoritative Match (no network).
 import { Match } from '../src/server/Match.js';
-import { PHASE, CER } from '../src/shared/constants.js';
+import { PHASE, CER, ROLE_BY_ID, ROLES, roleCard, FACTION_OBJECTIVE } from '../src/shared/constants.js';
+import { BOT_NAMES } from '../src/server/Bots.js';
 
 let fails = 0;
 const ok = (c, msg) => { if (!c) { fails++; console.log('FAIL', msg); } else console.log('ok  ', msg); };
@@ -100,5 +101,59 @@ function toVote(m) { m.bars.fillToNext(); m.cer.t = 0; step(m); /* assemble → 
   toVote(m); const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id); ok(m.cer.t === 12, 'vote countdown uses override');
   until(m, CER.EXECUTION); m.cer.sacrificeNpc(m.npcs.altar()[0]); ok(m.cer.sub !== CER.RESULT, 'buffer 0 skips outcome card');
   m.debug.run(P(0), 'reset_timers'); ok(m.timers.vote === 6 && m.timers.phaseTransitionBufferSeconds === 3, 'reset timers'); }
+// --- role cards
+ok(!ROLE_BY_ID[7] && ROLES.length === 20, 'Dungeon Look-Out removed (20 roles)');
+ok(roleCard(15, { threshold: 5 }).text.includes('3 crystals instead of 5'), 'Tribune text is dynamic (5 → 3)');
+ok(roleCard(17).text === 'A chosen player may use their character ability a second time.', 'Mentor copy');
+ok(ROLES.every(r => roleCard(r.id, { threshold: 3 }).when.length > 0), 'every role has an activation condition');
+ok(['fire', 'blood', 'chaos'].every(f => FACTION_OBJECTIVE[f]), 'faction objectives');
+{ const { m } = mk(11); ok(new Set(m.list.map(p => p.roleId)).size === 11 && !m.list.some(p => p.roleId === 7), '11 unique roles, none is #7'); }
+// --- vote turnout, exhausted guardrail, appointment fx, vision handover
+{ const sent = []; const m = new Match({ send: (pid, msg) => sent.push([pid, msg]) });
+  const ids = []; for (let i = 0; i < 7; i++) ids.push(m.addPlayer({ name: 'P' + i, isHost: i === 0 }).id);
+  m.startGame(ids[0]); m.phaseT = 0; m.tick(0.016);
+  ok(sent.some(([, x]) => x.t === 'fx' && x.type === 'appoint' && x.office === 'master'), 'first Master gets the pillar of light');
+  toVote(m);
+  const tired = m.list.find(p => p.id !== m.masterId); m.exhaustedQueue = [tired.id]; m.refreshExhausted();
+  tired.body.x = m.P(m.masterId).body.x + 1;
+  m.cer.lmb(m.P(m.masterId), tired.id);
+  ok(sent.some(([pid, x]) => pid === m.masterId && x.t === 'errorFlash' && /exhausted/.test(x.text)) && m.cer.sub === CER.NOMINATE, 'nominating an exhausted minion → error flash');
+  const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id);
+  ok(sent.some(([pid, x]) => pid === ex.id && x.t === 'big' && x.text.includes('YOU HAVE BEEN APPOINTED')), 'executioner banner');
+  ok(sent.some(([, x]) => x.t === 'big' && x.avatars?.length === 2), 'nomination banner carries both avatars');
+  const voters = m.list.filter(p => m.cer.isVoter(p));
+  voters.forEach((v, i) => m.cer.vote(v, i < 3 ? 1 : 0));
+  ok(m.cer.t <= 0.5, 'full turnout closes the vote early');
+  step(m, 0.1, 6); ok(m.cer.sub === CER.COUNT, '… and resolves to the count');
+  until(m, CER.RESULT); const nm = m.P(m.masterId);
+  ok(m.npcs.altar().every(n => nm.knownNpcs.has(n.id)), 'new Master inherits glyph vision of the altar captives'); }
+// --- curse resolution line & sudden death
+{ const { m } = mk(); toVote(m); const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id); until(m, CER.EXECUTION);
+  const [a] = m.npcs.altar(); a.curse = 'MANA_DRAIN'; m.cer.sacrificeNpc(a);
+  ok(/Mana Drain: Executioner .* lost 1 Mana Crystal/.test(m.cer.lastSacrifice.resolution), 'resolution line for Mana Drain'); }
+{ const { m } = mk(5); m.phase = PHASE.CEREMONY; m.cer.milestone = 4; m.tally = { fire: 1, blood: 3, chaos: 0 };
+  const v = m.list.find(p => p.id !== m.chaosLeaderId && p.id !== m.masterId);
+  m.cer.throwLiving(v); ok(m.phase === PHASE.CEREMONY && m.cer.sub === CER.RESULT, 'sudden death waits for the living-sacrifice outcome card');
+  m.cer.t = 0; step(m); ok(m.phase === PHASE.FINALE && m.winner === 'blood', 'Blood 3:1 after ceremony 4 of 5 → mathematical win'); }
+{ const { m } = mk(5); m.phase = PHASE.CEREMONY; m.cer.milestone = 4; m.tally = { fire: 2, blood: 2, chaos: 0 };
+  m.cer.throwLiving(m.list.find(p => p.id !== m.chaosLeaderId && p.id !== m.masterId)); m.cer.t = 0; step(m);
+  ok(m.phase !== PHASE.FINALE, 'no sudden death when the result is still open'); }
+// --- shove coins, immunity, coin pickup hold
+{ const { m } = mk(); const [a, b] = m.list.filter(p => p.id !== m.masterId);
+  b.gold = 20; m.dbg.shoveDropPct = 50; Object.assign(a.body, { x: 0, z: 6, yaw: 0 }); Object.assign(b.body, { x: 0, z: 5 });
+  m.shove(a, b.id);
+  const coins = [...m.tasks.coins.values()];
+  ok(b.gold === 10 && coins.reduce((s, c) => s + c.amount, 0) === 10 && coins.length === 10, 'shove drops 50% as individual coins');
+  a.shoveCd = 0; b.body.ragdoll = 0; Object.assign(b.body, { x: 0, z: 5, vx: 0, vz: 0 }); m.shove(a, b.id);
+  ok(b.gold === 10, 'same attacker cannot shove again during immunity');
+  const c = coins[0]; Object.assign(a.body, { x: c.x, z: c.z + 1, ragdoll: 0 }); a.frozen = false;
+  m.tasks.use(a, 'coin:' + c.id); ok(a.hold && m.tasks.coins.has(c.id), 'coin pickup is a hold');
+  step(m, 0.1, 8); ok(!m.tasks.coins.has(c.id) && a.gold === c.amount, 'coin collected after holding E'); }
+// --- bot names, sprint toggle
+{ const m = new Match({ send: () => {} }); m.addPlayer({ name: 'H', isHost: true }); m.bots.spawn(6);
+  ok(m.list.filter(p => p.isBot).every(p => BOT_NAMES.includes(p.name)) && new Set(m.list.map(p => p.name)).size === 7, 'bots get unique thematic names'); }
+{ const { m, P } = mk(); m.dbg.noSprint = true; const p = P(0); Object.assign(p.body, { x: 0, z: 0, vx: 0, vz: 0, ragdoll: 0 }); p.frozen = false;
+  for (let i = 0; i < 30; i++) m.simulate(p, { fwd: 1, strafe: 0, yaw: 0, pitch: 0, sprint: true }, 1 / 60);
+  ok(Math.hypot(p.body.vx, p.body.vz) < 4.5, 'disable sprint caps speed at walking pace'); }
 console.log(fails ? `\n${fails} FAILED` : '\nALL RULE TESTS PASSED');
 process.exit(fails ? 1 : 0);

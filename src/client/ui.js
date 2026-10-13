@@ -3,11 +3,13 @@
 //  crystals/gold), nameplates, NPC glyph tooltips, ceremony panels, modals,
 //  finale & scoreboard.
 // ============================================================================
-import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS } from '../shared/constants.js';
+import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS, roleCard, FACTION_OBJECTIVE } from '../shared/constants.js';
 import { TOOLS, ITEM_TYPES, RUNES } from '../shared/tasks.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const h = (tag, cls = '', html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
+/** Coloured minion portrait chip (hood + two glowing eyes) followed by the name. */
+export const avatar = (p, withName = true) => p ? `<span class="avc"><span class="av" style="--c:${p.color}"><i></i><i></i></span>${withName ? `<b>${esc(p.name)}</b>` : ''}</span>` : '';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ------------------------------------------------------------------ glyphs
@@ -63,7 +65,8 @@ export class UI {
     el.innerHTML = `
       <div class="cardWrap"><div class="card" id="rcard">
         <div class="face back" style="--glow:${f.color}"><div class="crest">${f.icon}</div><div class="runes">ᚠ ᚢ ᚦ ᚨ ᚱ</div></div>
-        <div class="face front"><div class="rIcon">${r.icon}</div><div class="rName">${esc(r.name)}</div><div class="rNum">Role ${r.id} / 21</div><div class="rDesc">${esc(r.desc)}</div></div>
+        <div class="face front">${(() => { const c = roleCard(r.id, msg); return `<div class="rWhen">⏳ ${esc(c.when)}</div><div class="rIcon">${r.icon}</div><div class="rName">${esc(r.name)}</div><div class="rDesc">${esc(c.text)}</div>
+          <div class="rObj" style="--fc:${f.color}"><b>FACTION OBJECTIVE</b> ${f.icon}<br>${esc(FACTION_OBJECTIVE[msg.faction])}</div>`; })()}</div>
       </div><div class="cardGlow" style="background:${f.color}"></div></div>
       <div class="revealTitle" id="rTitle" style="color:${f.color}">${f.name.toUpperCase()}</div>
       <div class="revealSub pulse" id="rSub">Press any key to reveal role</div>
@@ -97,10 +100,16 @@ export class UI {
     setTimeout(() => e.classList.add('out'), 5200); setTimeout(() => e.remove(), 6000);
     while (this.toastsEl.children.length > 7) this.toastsEl.lastChild.remove();
   }
-  big(text, sub = '', dur = 3, color = '#fff') {
-    this.bigEl.innerHTML = `<div class="bigMain" style="color:${color}">${esc(text)}</div>${sub ? `<div class="bigSub">${esc(sub)}</div>` : ''}`;
+  big(text, sub = '', dur = 3, color = '#fff', avatars = null) {
+    const av = avatars && avatars.filter(Boolean).length ? `<div class="bigAv">${avatars.filter(Boolean).map(a => avatar(a)).join('<span class="avArrow">➜</span>')}</div>` : '';
+    this.bigEl.classList.remove('err');
+    this.bigEl.innerHTML = `${av}<div class="bigMain" style="color:${color}">${esc(text)}</div>${sub ? `<div class="bigSub">${esc(sub)}</div>` : ''}`;
     this.bigEl.classList.remove('out'); this.bigEl.style.opacity = 1;
     clearTimeout(this.bigT); this.bigT = setTimeout(() => { this.bigEl.style.opacity = 0; }, Math.max(1.2, dur) * 1000);
+  }
+  errorFlash(text) {
+    this.big(`⛔ ${text}`, '', 2.2, '#ff5a4a');
+    void this.bigEl.offsetWidth; this.bigEl.classList.add('err');
   }
   label(id, text, color, dur) { this.labels.push({ id, text, color, until: performance.now() + dur * 1000 }); }
 
@@ -169,6 +178,7 @@ export class UI {
     if (inMatch && you.roleId) {
       const r = ROLE_BY_ID[you.roleId], f = FACTION_INFO[you.faction];
       const usable = you.ability.ok;
+      const card = roleCard(r.id, { threshold: st.balance.threshold, players: st.balance.players });
       const statuses = [];
       if (me?.master) statuses.push('👑 Master of Ceremonies');
       if (me?.exec) statuses.push('🪓 Executioner');
@@ -178,7 +188,6 @@ export class UI {
       if (you.fumes > 0) statuses.push(`🤢 Intoxicated ${Math.ceil(you.fumes)}s`);
       if (you.key) statuses.push('🗝️ Prison key');
       if (you.ghost) statuses.push('👻 Ghost');
-      if (you.lookout) statuses.push('🔭 Look-Out vision');
       if (you.leader) statuses.push('🔮 Chaos Leader');
       const held = me?.tool ? TOOLS[me.tool]?.name : me?.item ? ITEM_TYPES[me.item]?.name : me?.npc ? 'Bound captive' : '';
       const bbHtml = `
@@ -186,10 +195,12 @@ export class UI {
           <div class="fac" style="color:${f.color}">${f.icon} ${f.name}</div></div>
         <div class="held">${held ? '✋ ' + esc(held) + (me?.load ? ' + ' + esc(ITEM_TYPES[me.load]?.name) : '') + ' <span class="k">[Q]</span>' : ''}</div>
         <div class="statuses">${statuses.map(s => `<span>${s}</span>`).join('')}</div>
-        <div id="roleCard" class="roleCard ${you.cardUsed ? 'used' : ''} ${usable ? 'usable' : ''}" title="${esc(r.desc)}">
+        <div id="roleCard" class="roleCard ${you.cardUsed ? 'used' : ''} ${usable ? 'usable' : ''}">
+          <div class="rcWhen">⏳ ${esc(card.when)}</div>
           <div class="rcIcon">${r.icon}</div><div class="rcName">${esc(r.name)}</div>
+          <div class="rcText">${esc(card.text)}</div>
           <div class="rcState">${you.cardUsed ? 'USED (face up)' : usable ? '▶ READY — press [G]' : esc(you.ability.reason || 'face down')}</div>
-          <div class="rcDesc">${esc(r.desc)}</div>
+          <div class="rcObj" style="--fc:${f.color}"><b>FACTION OBJECTIVE</b> ${f.icon} ${esc(FACTION_OBJECTIVE[you.faction])}</div>
         </div>`;
       if (bb.dataset.h !== bbHtml) { bb.dataset.h = bbHtml; bb.innerHTML = bbHtml; $('#roleCard').onclick = () => game.useAbility(); }
     }
@@ -216,7 +227,10 @@ export class UI {
     const you = st.you, name = id => st.players.find(p => p.id === id)?.name ?? '?';
     let html = '';
     if (c.sub === CER.VOTE) {
-      html += `<div class="cpTitle">Executioner Nominated — <b>${esc(name(st.execId))}</b>. Do you agree?</div>`;
+      const P = id => st.players.find(p => p.id === id);
+      const mP = P(c.nominatedBy ?? st.masterId), eP = P(st.execId), master = P(st.masterId);
+      html += `<div class="cpTitle">${avatar(mP)} nominated ${avatar(eP)} as Executioner. Do you agree?</div>
+        <div class="cpNote">⚔️ <b>If the mutiny succeeds</b> (${c.threshold}+ 💎): ${esc(master?.name ?? 'the Master')} is overthrown, the top mutineer takes the staff and nominates anew, and every crystal spent is consumed.<br>🛡️ <b>If it fails</b>: all crystals return to their owners and ${esc(eP?.name ?? 'the Executioner')} carries out the execution.</div>`;
       if (c.voter) {
         const sealed = c.sealed.includes(you.id), prov = c.provoked.includes(you.id);
         const opts = [[0, 'Yes'], [1, 'Disagree — 1 💎'], [2, 'Strongly Disagree — 2 💎'], [3, 'Absolutely Disagree — 3 💎']];
@@ -224,7 +238,7 @@ export class UI {
         if (sealed) html += '<div class="cpNote">🤫 You are sealed by the Silence Enchanter.</div>';
         if (prov) html += '<div class="cpNote">📢 You are provoked: you will play at least 1 crystal.</div>';
         if (c.anarchy) html += '<div class="cpNote">🏴 Anarchy: max 1 crystal each, 1 is enough.</div>';
-        html += `<div class="cpNote">Threshold to overthrow: <b>${c.threshold}</b> 💎 • Crystals are lost only if the rebellion succeeds.</div>`;
+        html += `<div class="cpNote">Threshold to overthrow: <b>${c.threshold}</b> 💎 • the vote closes as soon as everyone has decided.</div>`;
       } else html += `<div class="cpNote">The crew is voting… (${c.voted.length} decided)</div>`;
     } else if (c.sub === CER.COUNT || c.sub === CER.REACTION || (c.result && c.sub === CER.EXECUTION && performance.now() - (this.resT || 0) < 3500)) {
       const key = c.reveal.map(r => r.id).join(',');
@@ -253,7 +267,7 @@ export class UI {
       if (m) html += `<div class="cpTitle">${m}</div>`;
       if ((c.mode === 'eye' && st.execId === you.id) || (c.mode === 'abyss' && st.masterId === you.id) || (c.mode === 'initiation' && you.leader)) html += '<div class="cpNote big">Walk up to a minion and strike them (LMB)</div>';
     } else if (c.sub === CER.DEBATE) {
-      html += `<div class="cpTitle">DEBATE — New Hazard in ${c.infinite ? '∞' : Math.ceil(c.t) + 's'}</div><div class="cpNote">Global voice [V] & chat [Enter] in the Sanctuary.${c.lastSacrifice ? ` Sacrificed: ${FACTION_INFO[c.lastSacrifice.faction].icon} ${FACTION_INFO[c.lastSacrifice.faction].short} • ${CURSES[c.lastSacrifice.curse].name}` : ''}</div>`;
+      html += `<div class="cpTitle">DEBATE — New Hazard in ${c.infinite ? '∞' : Math.ceil(c.t) + 's'}</div><div class="cpNote">Global voice [V] & chat [Enter] in the Sanctuary.${c.lastSacrifice ? ` Sacrificed: ${FACTION_INFO[c.lastSacrifice.faction].icon} ${FACTION_INFO[c.lastSacrifice.faction].short} • ${CURSES[c.lastSacrifice.curse].name}` : ''}</div>${c.lastSacrifice?.resolution ? `<div class="cpNote resLine">↳ ${esc(c.lastSacrifice.resolution)}</div>` : ''}`;
     } else if (c.sub === CER.RESULT && c.summary) {
       const s = c.summary;
       html += `<div class="sumCard">${s.glyph ? `<div class="sumGlyph">${glyphSVG(s.glyph.faction, s.glyph.curse, 64)}</div>` : ''}<div class="sumIcon">${s.icon || ''}</div>
@@ -332,7 +346,7 @@ export class UI {
     if (p.role) { const r = ROLE_BY_ID[p.role]; if (r && (p.id !== you.id)) top.push(`<span class="pRole" title="${esc(r.name)}">${r.icon}</span>`); }
     if (p.master) top.push(STATUS_ICONS.master); if (p.exec) top.push(STATUS_ICONS.exec);
     if (p.exhausted) top.push(STATUS_ICONS.exhausted); if (p.muted) top.push(STATUS_ICONS.muted); if (p.gagged) top.push(STATUS_ICONS.gagged);
-    if (p.fumes) top.push(STATUS_ICONS.fumes); if (p.ghost) top.push(STATUS_ICONS.ghost); if (p.key) top.push(STATUS_ICONS.key);
+    if (p.fumes) top.push(STATUS_ICONS.fumes); if (p.ghost) top.push(STATUS_ICONS.ghost); if (p.key) top.push(STATUS_ICONS.key); if (p.ward) top.push(`<span title="Chaos Ward — immune to Chaos">${STATUS_ICONS.ward}</span>`);
     if (p.talking) top.push('🔊');
     let pre = '';
     if (p.faction && p.id !== you.id) pre = FACTION_INFO[p.faction].icon + (p.leader ? '👑' : '') + ' ';        // God Mode
@@ -357,12 +371,13 @@ export class UI {
     if (p.master) stat.push('👑 Master of Ceremonies'); if (p.exec) stat.push('🪓 Executioner');
     if (p.exhausted) stat.push('💤 Exhausted (cannot be nominated)'); if (p.muted) stat.push('🤐 Cursed with muteness');
     if (p.gagged) stat.push('🔇 Gagged'); if (p.fumes) stat.push('🤢 Intoxicated'); if (p.ghost) stat.push('👻 Ghost');
+    if (p.ward) stat.push('🛡️ Chaos Ward — immune to Chaos (cannot be initiated)');
     if (p.key) stat.push('🗝️ Holds the Prison key'); if (p.ridingOn) stat.push('🧗 Riding a minion'); if (p.rider) stat.push('🏋️ Carrying a rider');
     const held = p.tool ? TOOLS[p.tool]?.name : p.item ? ITEM_TYPES[p.item]?.name : p.npc ? 'a bound captive' : null;
     const cardState = p.roleUsed === undefined ? '(hidden from others)' : p.roleUsed ? 'card used — face up' : 'card re-armed — face down';
     return `${bubble ? `<div class="bubble">${esc(bubble)}</div>` : ''}${extraLabel ? `<div class="pLabel" style="color:${extraLabel.color}">${esc(extraLabel.text)}</div>` : ''}
       <div class="pCard"><div class="pcName"><span style="color:${p.color}">●</span> ${esc(p.name)} <span class="pCry">💎${p.crystals}</span></div>
-      <div class="pcRole">${r ? `${r.icon} <b>${esc(r.name)}</b> <small>(${cardState})</small><div class="pDesc">${esc(r.desc)}</div>` : '🂠 Role: hidden — card not revealed yet'}</div>
+      <div class="pcRole">${r ? `${r.icon} <b>${esc(r.name)}</b> <small>(${cardState})</small><div class="pDesc">${esc(roleCard(r.id, { threshold: st.balance.threshold }).text)}</div>` : '🂠 Role: hidden — card not revealed yet'}</div>
       <div class="pcFac">${this.factionLine(p, st)}</div>
       ${stat.length || held ? `<div class="pcStat">${stat.join(' • ')}${held ? `${stat.length ? ' • ' : ''}✋ ${esc(held)}` : ''}</div>` : ''}</div>`;
   }
@@ -390,7 +405,8 @@ export class UI {
       const step = role.targets[chosen.length];
       if (!step) { this.closeModal(); onConfirm(chosen); return; }
       const others = st.players.filter(p => !p.ghost);
-      const m = this.modal(`<h3>${role.icon} ${esc(role.name)}</h3><p>${esc(role.desc)}</p><h4>${chosen.length + 1}/${role.targets.length}: ${esc(step.label)}</h4>
+      const cc = roleCard(role.id, { threshold: st.balance.threshold });
+      const m = this.modal(`<h3>${role.icon} ${esc(role.name)}</h3><p><small>⏳ ${esc(cc.when)}</small><br>${esc(cc.text)}</p><h4>${chosen.length + 1}/${role.targets.length}: ${esc(step.label)}</h4>
         <div class="plist">${others.map(p => `<button class="pbtn" data-id="${p.id}" ${chosen.includes(p.id) && step.filter !== 'any' ? 'disabled' : ''}><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''} 💎${p.crystals}</button>`).join('')}</div>`);
       m.querySelectorAll('.pbtn').forEach(b => b.onclick = () => { chosen.push(+b.dataset.id); render(); });
     };

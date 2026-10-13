@@ -40,7 +40,10 @@ export class Debug {
         else for (const q of m.list.filter(q => q.isBot).slice(want)) m.players.delete(q.id);
         return ok(`Bots: ${m.list.filter(q => q.isBot).length}`);
       }
-      case 'bot_mode': if (['idle', 'roamer', 'voter'].includes(a.mode)) { m.dbg.botMode = a.mode; ok('Bot behaviour: ' + a.mode); } return;
+      case 'bot_speed': m.dbg.botSpeed = Math.max(0.1, Math.min(4, +a.m || 1)); return ok(`Bot movement speed ×${m.dbg.botSpeed}`);
+      case 'disable_sprint': m.dbg.noSprint = !!a.on; return ok(`Sprint (Shift) ${a.on ? 'DISABLED' : 'enabled'} for everyone`);
+      case 'shove_drop': m.dbg.shoveDropPct = Math.max(0, Math.min(100, +a.pct || 0)); return ok(`Shove coin drop: ${m.dbg.shoveDropPct}%`);
+      case 'bot_mode': if (['idle', 'roamer', 'voter', 'human'].includes(a.mode)) { m.dbg.botMode = a.mode; ok('Bot behaviour: ' + a.mode); } return;
       // ---- 3. Pacing & progress bars
       case 'red_tick': m.dbg.redX = a.x == null || a.x === '' ? null : Math.max(0, +a.x); m.dbg.redT = Math.max(0.1, +a.T || 1.5); return ok(`Red tick: ${m.dbg.redX ?? 'auto'} every ${m.dbg.redT}s`);
       case 'freeze_red': m.dbg.freezeRed = !!a.on; return ok(`Red bar ${a.on ? 'FROZEN' : 'running'}`);
@@ -110,6 +113,7 @@ export class Debug {
       case 'reset_timers': m.timers = { ...DEFAULT_TIMERS }; m.dbg.workSec = null; m.dbg.holdMul = 1; m.dbg.debateSec = null; return ok('All timers reset to defaults');
       case 'extended_curses': m.dbg.extendedCurses = !!a.on; return ok(`Extended curses (Call of the Abyss, Dark Initiation) in random pool: ${a.on ? 'ON' : 'OFF'}`);
       case 'teleport': if (target && isFinite(+a.x) && isFinite(+a.z)) { Object.assign(target.body, { x: +a.x, y: 0, z: +a.z, vx: 0, vy: 0, vz: 0 }); m.send(target.id, { t: 'teleport', x: +a.x, z: +a.z, yaw: target.body.yaw }); ok(`${target.name} teleported (keeps held tool)`); } return;
+      case 'note': return ok(String(a.text || '').slice(0, 120));
       case 'allow_debug_all': if (p.id === m.hostId) { m.dbg.debugAll = !!a.on; ok(`Debug for everyone: ${a.on}`); } return;
       default: return ok('Unknown debug command ' + cmd);
     }
@@ -119,7 +123,7 @@ export class Debug {
     const d = this.m.dbg;
     return {
       freezeRed: d.freezeRed, redX: d.redX, redT: d.redT, yellowMul: d.yellowMul, debateSec: d.debateSec, debateInfinite: d.debateInfinite,
-      maxConcurrent: d.maxConcurrent, mutinyThreshold: d.mutinyThreshold, forcedEvent: d.forcedEvent, botMode: d.botMode,
+      maxConcurrent: d.maxConcurrent, mutinyThreshold: d.mutinyThreshold, forcedEvent: d.forcedEvent, botMode: d.botMode, botSpeed: d.botSpeed, noSprint: d.noSprint, shoveDropPct: d.shoveDropPct,
       timeScale: this.m.timeScale, debugAll: d.debugAll, forcedNpcs: d.forcedNpcs,
       timers: this.m.timers, workSec: d.workSec, holdMul: d.holdMul, extendedCurses: d.extendedCurses, workDefault: this.m.balance.work, debateDefault: this.m.balance.debate,
     };

@@ -93,7 +93,6 @@ export class Roles {
         if (T[0] === T[1]) return 'Pick two different players.';
         for (const t of T) { cer.sealed.add(t.id); cer.votes.set(t.id, 0); }
         m.toastAll(`🤫 ${T[0].name} and ${T[1].name} are sealed — they cannot rebel.`); break;
-      case 7: p.lookoutT = m.timers.lookout; m.toast(p.id, '🔭 You see every minion through the walls for 25 s.'); break;
       case 8: {
         const [a, b] = T;
         if (b.exhausted || a === b) return 'The receiver must be a different, non-exhausted player.';
@@ -107,7 +106,7 @@ export class Roles {
         if (T[0] === T[1]) return 'Pick two different players.';
         for (const t of T) cer.provoked.add(t.id);
         m.toastAll(`📢 ${T[0].name} and ${T[1].name} MUST play at least 1 crystal.`); break;
-      case 13: m.toastAll(`🩶 Grey Eminence ${p.name} appoints the Executioner!`); cer.nominate(T[0].id, true); break;
+      case 13: m.toastAll(`🩶 Grey Eminence ${p.name} appoints the Executioner!`); cer.nominate(T[0].id, p); break;
       case 14: m.toastAll(`🍲 ${p.name}, the Old Chef, dethrones the Master!`); cer.dethrone(true); break;
       case 15: cer.tribune = true; m.toastAll(`⚖️ Tribune of the People: the threshold is halved (${cer.threshold}).`); break;
       case 16: m.npcs.exorcise(); m.toastAll('📜 The Exorcist purged the cell — a new pool of captives was drawn.'); break;

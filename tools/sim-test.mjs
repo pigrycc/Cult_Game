@@ -3,7 +3,7 @@
 import WebSocket from 'ws';
 import { GameServer } from '../src/server/GameServer.js';
 
-const BOTS = +(process.argv[2] || 8), TS = +(process.argv[3] || 8);
+const BOTS = +(process.argv[2] || 8), TS = +(process.argv[3] || 8), MODE = process.argv[4] || 'roamer';
 const srv = new GameServer({ port: 7791, hostToken: 'T', log: () => {} });
 await srv.start();
 const ws = new WebSocket('ws://127.0.0.1:7791');
@@ -19,6 +19,7 @@ ws.on('message', (d, bin) => {
     me = m.id;
     sendJ({ t: 'debug', cmd: 'spawn_bots', a: { n: BOTS } });
     sendJ({ t: 'debug', cmd: 'timescale', a: { s: TS } });
+    sendJ({ t: 'debug', cmd: 'bot_mode', a: { mode: MODE } });
     sendJ({ t: 'debug', cmd: 'god_mode', a: { on: true } });
     setTimeout(() => sendJ({ t: 'start' }), 300);
   }

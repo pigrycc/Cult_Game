@@ -123,6 +123,9 @@ export function buildWorld(scene) {
   const pit = mesh(new THREE.CircleGeometry(WASTE_PIT.r + 0.4, 16), mat('#000', { basic: true })); pit.rotation.x = -Math.PI / 2; pit.position.set(WASTE_PIT.x, 0.02, WASTE_PIT.z); scene.add(pit);
   scene.add(rot(mesh(new THREE.TorusGeometry(WASTE_PIT.r + 0.4, 0.12, 4, 16), mat('#4a4e56', { metal: 0.6 }), WASTE_PIT.x, 0.05, WASTE_PIT.z), 'x', Math.PI / 2));
 
+  // ---- wayfinding: carved headers above entrances + arrow boards on corridor walls
+  buildSignage(scene);
+
   // ---- lobby cave
   const mirror = new Reflector(new THREE.PlaneGeometry(2.2, 2.8), { textureWidth: 512, textureHeight: 640, color: '#8a8a9a' });
   mirror.position.set(LOBBY_MIRROR.x, 1.6, LOBBY_MIRROR.z + 0.32); scene.add(mirror);
@@ -241,4 +244,73 @@ export function updateTally(tablet, tally) {
   const items = [['🔥', tally.fire, '#ff8a1c'], ['🩸', tally.blood, '#ff3355'], ['🔮', tally.chaos, '#b06bff']];
   items.forEach(([ic, n, col], i) => { x.fillStyle = col; x.font = 'bold 80px serif'; x.fillText(String(n), 100 + i * 156, 180); x.font = '40px serif'; x.fillText(ic, 100 + i * 156, 236); });
   tex.needsUpdate = true;
+}
+
+// ============================================================================
+//  SIGNAGE — painted wooden boards (canvas text). Plane faces +Z before rotY.
+//  rotY: 0 → faces south (+z), PI → north (−z), PI/2 → east (+x), −PI/2 → west (−x)
+// ============================================================================
+function makeSign(text, { w = 4, h = 0.8, header = false, color = '#f2dcae' } = {}) {
+  const c = document.createElement('canvas');
+  const scale = 128; c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+  const g = c.getContext('2d');
+  // planks
+  const grd = g.createLinearGradient(0, 0, 0, c.height); grd.addColorStop(0, '#6a4626'); grd.addColorStop(1, '#3e2814');
+  g.fillStyle = grd; g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 3;
+  for (let y = c.height / 3; y < c.height; y += c.height / 3) { g.beginPath(); g.moveTo(0, y); g.lineTo(c.width, y); g.stroke(); }
+  g.strokeStyle = '#c8a040'; g.lineWidth = 8; g.strokeRect(6, 6, c.width - 12, c.height - 12);
+  g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+  let size = Math.round(c.height * (header ? 0.5 : 0.46));
+  g.font = `bold ${size}px "Palatino Linotype", Georgia, serif`;
+  while (g.measureText(text).width > c.width - 40 && size > 10) { size -= 2; g.font = `bold ${size}px "Palatino Linotype", Georgia, serif`; }
+  g.shadowColor = '#000'; g.shadowBlur = 6;
+  g.fillText(text, c.width / 2, c.height / 2 + 2);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const grp = new THREE.Group();
+  const board = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.08), mat('#3e2814'));
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+  face.position.z = 0.045;
+  grp.add(board, face);
+  if (header) for (const sx of [-1, 1]) grp.add(mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 4), mat('#555', { metal: 0.6 }), sx * (w / 2 - 0.2), h / 2 + 0.45, 0));
+  return grp;
+}
+function sign(scene, text, x, y, z, rotY, opts) { const s = makeSign(text, opts); s.position.set(x, y, z); s.rotation.y = rotY; scene.add(s); return s; }
+
+function buildSignage(scene) {
+  const H = { header: true, w: 4.6, h: 0.75 };
+  const S = Math.PI, E = Math.PI / 2, Wst = -Math.PI / 2;
+  // Room headers above the entrances (readable from the approach side)
+  sign(scene, 'SELECTION CHAMBER', 0, 3.6, -13.7, 0, H);
+  sign(scene, 'PRISON OF THE REJECTED', 10, 3.3, -13.7, 0, { ...H, w: 4.2 });
+  sign(scene, 'BOILER ROOM & ENGINE ROOM', -26, 3.6, -1.75, 0, { ...H, w: 6 });
+  sign(scene, 'ARMORY & WORKSHOP', -26, 3.6, 1.75, S, { ...H, w: 6 });
+  sign(scene, 'ALCHEMY LAB', 26, 3.6, -1.75, 0, { ...H, w: 6 });
+  sign(scene, 'LIBRARY & SCRIPTORIUM', 26, 3.6, 1.75, S, { ...H, w: 6 });
+  sign(scene, 'KITCHEN & COLD ROOM', 0, 3.6, 13.7, S, H);
+  sign(scene, 'BONE MILL & WASTE PIT', 0, 3.6, 25.7, S, H);
+  sign(scene, 'COLD ROOM', 3.7, 2.9, 17, Wst, { header: true, w: 1.9, h: 0.5 });
+  sign(scene, 'WEST WING', -17.7, 3.6, 0, E, { ...H, w: 3.6 });
+  sign(scene, 'EAST WING', 17.7, 3.6, 0, Wst, { ...H, w: 3.6 });
+  sign(scene, 'CENTRAL SANCTUARY', -18.3, 3.6, 0, Wst, { ...H, w: 3.6 });
+  sign(scene, 'CENTRAL SANCTUARY', 18.3, 3.6, 0, E, { ...H, w: 3.6 });
+  // Directional arrows on corridor walls (offset 0.27 m from the wall centre line)
+  const A = { w: 3.6, h: 0.5 };
+  // west corridor (walls z = ±2)
+  sign(scene, '◄ BOILER ROOM • ARMORY    SANCTUARY ►', -14.5, 1.9, -1.72, 0, A);
+  sign(scene, '◄ SANCTUARY    BOILER ROOM • ARMORY ►', -14.5, 1.9, 1.72, S, A);
+  // east corridor
+  sign(scene, '◄ SANCTUARY    ALCHEMY LAB • LIBRARY ►', 14.5, 1.9, -1.72, 0, A);
+  sign(scene, '◄ ALCHEMY LAB • LIBRARY    SANCTUARY ►', 14.5, 1.9, 1.72, S, A);
+  // north corridor (walls x = ±2)
+  sign(scene, '◄ SANCTUARY    SELECTION CHAMBER ►', -1.72, 1.9, -12.4, E, { w: 2.6, h: 0.45 });
+  sign(scene, '◄ PRISON OF THE REJECTED', 6.5, 1.9, -11.88, S, { w: 3, h: 0.45 });
+  // south corridor
+  sign(scene, '◄ KITCHEN • BONE MILL    SANCTUARY ►', -1.72, 1.9, 12.4, E, { w: 2.6, h: 0.45 });
+  sign(scene, '◄ SANCTUARY    KITCHEN • BONE MILL ►', 1.72, 1.9, 12.4, Wst, { w: 2.6, h: 0.45 });
+  // halls: point to the two rooms of each wing
+  sign(scene, '◄ ARMORY    BOILER ROOM ►', -35.72, 1.9, 0, E, { w: 3.4, h: 0.5 });
+  sign(scene, '◄ ALCHEMY LAB    LIBRARY ►', 35.72, 1.9, 0, Wst, { w: 3.4, h: 0.5 });
+  // kitchen → bone mill stairs
+  sign(scene, '▼ BONE MILL (stairs)', -3.5, 2.2, 25.72, S, { w: 2.4, h: 0.45 });
 }
