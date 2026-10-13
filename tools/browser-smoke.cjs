@@ -1,6 +1,6 @@
 // Headless browser smoke test: dedicated server + static client + Chromium (SwiftShader WebGL).
 // node tools/browser-smoke.cjs  → screenshots in tools/shots/
-const { chromium } = require('/root/.nvm/versions/node/v22.23.3/lib/node_modules/@playwright/mcp/node_modules/playwright');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const http = require('http'), fs = require('fs'), path = require('path'), { spawn } = require('child_process');
 
 const root = path.join(__dirname, '..', 'dist', 'client');
@@ -13,7 +13,7 @@ const steps = (process.argv[2] || 'all');
 
 (async () => {
   await sleep(800);
-  const browser = await chromium.launch({ executablePath: '/opt/playwright/chromium-1232/chrome-linux64/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
   const errors = [];
   page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errors.push(m.type() + ': ' + m.text()); });

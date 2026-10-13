@@ -96,16 +96,19 @@ export const ROLE_BY_ID = Object.fromEntries(ROLES.map(r => [r.id, r]));
 // NPC curses (glyph SHAPE). Faction = glyph COLOR.
 // ---------------------------------------------------------------------------
 export const CURSES = {
-  NONE:            { name: 'Unmarked',               shape: 'circle',   desc: 'No stigma. A clean offering.' },
   MANA_BOOST:      { name: "Executioner's Mana Boost", shape: 'tri_up', desc: 'The Executioner gains +1 Mana Crystal.' },
   MANA_DRAIN:      { name: 'Mana Drain',             shape: 'tri_down', desc: 'The Executioner permanently loses 1 Mana Crystal.' },
-  EYE_OF_TRUTH:    { name: 'Eye of Truth',           shape: 'eye',      desc: 'The Executioner privately learns one player\'s faction.' },
+  EYE_OF_TRUTH:    { name: 'Insight Eye',            shape: 'eye',      desc: 'The Executioner privately learns one player\'s faction.' },
   TOXIC_FUMES:     { name: 'Toxic Fumes',            shape: 'cloud',    desc: 'Smoke strips the Master of the staff (passes to least-served). Both deciders get drunk & garbled.' },
   CALL_OF_ABYSS:   { name: 'Call of the Abyss',      shape: 'key',      desc: 'The Master hands a Prison key to one player.' },
   DARK_INITIATION: { name: 'Dark Initiation',        shape: 'star',     desc: 'The Chaos Leader secretly converts one player.' },
   GAGGING_SEAL:    { name: 'Gagging Seal',           shape: 'seal',     desc: 'The Executioner is gagged (no voice/chat) until the next ceremony.' },
 };
 export const CURSE_KEYS = Object.keys(CURSES);
+// Every captive ALWAYS carries a curse. Core pool (spec): Mana Boost, Mana Drain, Toxic Fumes, Insight Eye, Gagging Seal.
+export const CORE_CURSES = ['MANA_BOOST', 'MANA_DRAIN', 'TOXIC_FUMES', 'EYE_OF_TRUTH', 'GAGGING_SEAL'];
+// Extended glyphs from the Convict System doc — added to the random pool only when the debug toggle is on.
+export const EXTENDED_CURSES = ['CALL_OF_ABYSS', 'DARK_INITIATION'];
 
 // ---------------------------------------------------------------------------
 // Milestone events
@@ -150,8 +153,19 @@ export const DEFAULT_TIMERS = {
   announce: 3, nominate: 7, vote: 6, count: 4, reaction: 5,
   execution: 25, eye: 6, abyss: 8, initiation: 10,
   inspection: 10, muteness: 10, flogging: 10, living: 25,
-  eventBanner: 4, finaleDelay: 4,
   spyWindow: 15, lookout: 25, fumes: 45, taskRespawnDelay: 3,
+  phaseTransitionBufferSeconds: 3,     // informational pause between major ceremony events
+};
+// Labels for the debug "Timers" section (seconds unless noted)
+export const TIMER_LABELS = {
+  revealBack: 'Card reveal — back (faction)', revealFront: 'Card reveal — front (role)',
+  announce: 'Ceremony announce ("Execution in 3 sec")', nominate: 'Executioner nomination', vote: 'Mutiny voting (crystal betting)',
+  count: 'Crystal count reveal', reaction: 'Reaction time', execution: 'Execution (throw a captive)',
+  eye: 'Insight Eye strike', abyss: 'Call of the Abyss', initiation: 'Dark Initiation',
+  inspection: 'Robe Inspection', muteness: 'Curse of Muteness', flogging: 'Flogging', living: 'Living Sacrifice',
+  phaseTransitionBufferSeconds: 'phaseTransitionBufferSeconds (outcome cards)',
+  spyWindow: 'Oubliette Spy window', lookout: 'Dungeon Look-Out vision', fumes: 'Toxic Fumes intoxication',
+  taskRespawnDelay: 'Task respawn delay',
 };
 
 export const PHASE = {
@@ -164,7 +178,7 @@ export const PHASE = {
 // Ceremony sub-states
 export const CER = {
   ANNOUNCE: 'ANNOUNCE', NOMINATE: 'NOMINATE', VOTE: 'VOTE', COUNT: 'COUNT', REACTION: 'REACTION',
-  EXECUTION: 'EXECUTION', CURSE: 'CURSE', EVENT: 'EVENT', DEBATE: 'DEBATE',
+  EXECUTION: 'EXECUTION', CURSE: 'CURSE', EVENT: 'EVENT', DEBATE: 'DEBATE', RESULT: 'RESULT',
 };
 
 export const STATUS_ICONS = {

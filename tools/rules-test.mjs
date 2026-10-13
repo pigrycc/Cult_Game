@@ -14,6 +14,7 @@ function mk(n = 7) {
   return { m, ids, P: i => m.P(ids[i]) };
 }
 const step = (m, s = 0.1, n = 1) => { for (let i = 0; i < n; i++) m.tick(s); };
+function until(m, sub, max = 12) { for (let i = 0; i < max && !(m.phase === PHASE.CEREMONY && m.cer.sub === sub); i++) { m.cer.t = 0; step(m); } return m.cer.sub === sub; }
 function toVote(m) { m.bars.fillToNext(); m.cer.t = 0; step(m); /* assemble → NOMINATE */ }
 
 // --- basic flow
@@ -30,8 +31,9 @@ function toVote(m) { m.bars.fillToNext(); m.cer.t = 0; step(m); /* assemble → 
   m.cer.vote(voters[0], 2); m.cer.vote(voters[1], 1);
   m.cer.t = 0; step(m); ok(m.cer.sub === CER.COUNT, 'count'); m.cer.t = 0; step(m); ok(m.cer.sub === CER.REACTION, 'reaction');
   m.cer.t = 0; step(m);
+  ok(m.cer.sub === CER.RESULT && m.cer.summary?.title.includes('succeeds'), 'rebellion outcome card (buffer)');
   ok(m.masterId === voters[0].id, 'top rebel becomes master'); ok(voters[0].crystals === 1 && voters[1].crystals === 2, 'rebel crystals lost');
-  ok(m.cer.sub === CER.NOMINATE, 'phase 2 replays'); }
+  ok(until(m, CER.NOMINATE, 1), 'phase 2 replays after the buffer'); }
 // --- rebellion fail keeps crystals; Pacifier & Instigator & Tribune
 { const { m, P } = mk(); toVote(m);
   const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id);
@@ -50,11 +52,10 @@ function toVote(m) { m.bars.fillToNext(); m.cer.t = 0; step(m); /* assemble → 
 { const { m } = mk(); toVote(m); const ge = m.list.find(p => p.id !== m.masterId); ge.roleId = 13; ge.cardUsed = false;
   const t = m.eligibleExec().find(p => p !== ge); m.roles.use(ge, [t.id]); ok(m.execId === t.id && m.cer.sub === CER.VOTE, 'Grey Eminence appoints executioner');
   const chef = m.list.find(p => p.id !== m.masterId && p !== ge && p !== t); chef.roleId = 14; chef.cardUsed = false; const old = m.masterId;
-  m.roles.use(chef, []); ok(m.masterId !== old && m.cer.sub === CER.NOMINATE, 'Old Chef dethrones'); }
+  m.roles.use(chef, []); ok(m.masterId !== old && m.cer.sub === CER.RESULT && until(m, CER.NOMINATE, 1), 'Old Chef dethrones (outcome card, then nomination)'); }
 // --- Execution, sacrifice tally, prison discard, glyph fog of war
 { const { m } = mk(); toVote(m); const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id);
-  for (let i = 0; i < 3; i++) { m.cer.t = 0; step(m); }
-  ok(m.cer.sub === CER.EXECUTION, 'execution after failed/no rebellion');
+  ok(until(m, CER.EXECUTION), 'execution after failed/no rebellion');
   const [a] = m.npcs.altar(); a.curse = 'MANA_BOOST'; const before = ex.crystals;
   const other = m.list.find(p => p.id !== ex.id && p.id !== m.masterId);
   ok(!m.npcs.serialize(other).find(n => n.id === a.id).faction, 'bystander sees [Unknown Captive]');
@@ -63,10 +64,12 @@ function toVote(m) { m.bars.fillToNext(); m.cer.t = 0; step(m); /* assemble → 
   ok(ex.crystals === before + 1, 'mana boost'); ok(m.npcs.npcs.get(a.id).state === 'sacrificed', 'sacrificed');
   ok([...m.npcs.npcs.values()].some(n => n.state === 'prison' && n.discard === 'exec'), 'other captive → prison (exec)');
   ok(!!m.npcs.serialize(other).find(n => n.state === 'prison'), 'prison captive replicated');
-  m.cer.t = 0; step(m); /* banner → event */ m.cer.t = 0; step(m); ok(m.cer.sub === CER.DEBATE, 'debate after empty milestone');
+  ok(m.cer.sub === CER.RESULT && m.cer.summary.lines.some(l => l.includes('+1')), 'sacrifice outcome card shows mana gain');
+  ok(m.cer.t === 3, 'buffer = 3 s');
+  ok(until(m, CER.DEBATE), 'debate after empty milestone');
   m.cer.t = 0; step(m); ok(m.phase === PHASE.WORK && ex.exhausted, 'back to work, executioner exhausted'); }
 // --- Toxic fumes transfers staff to least-served
-{ const { m } = mk(); toVote(m); const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id); for (let i = 0; i < 3; i++) { m.cer.t = 0; step(m); }
+{ const { m } = mk(); toVote(m); const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id); until(m, CER.EXECUTION);
   const oldM = m.masterId; const [a] = m.npcs.altar(); a.curse = 'TOXIC_FUMES'; m.cer.sacrificeNpc(a);
   ok(m.masterId !== oldM && m.P(oldM).exhausted && m.P(oldM).fumesT > 0 && ex.fumesT > 0, 'toxic fumes: staff moves, both intoxicated, old master exhausted'); }
 // --- Living sacrifice of Chaos Leader → chaos wins; tie → chaos
@@ -81,5 +84,21 @@ function toVote(m) { m.bars.fillToNext(); m.cer.t = 0; step(m); /* assemble → 
   const ex = m.list.find(p => p.id !== m.masterId && p !== spy && p !== s2); ex.roleId = 16; m.roles.use(ex, []); ok(m.npcs.chamber().length === 3, 'exorcist redraws 3');
   const th = m.list.find(p => ![spy, s2, ex].includes(p) && p.id !== m.masterId); th.roleId = 1; th.body.x = spy.body.x + 1; th.body.z = spy.body.z; m.roles.use(th, [spy.id]); ok(th.crystals === 4 && spy.crystals === 2, 'mana thief steals 1');
   const mt = m.list.find(p => ![spy, s2, ex, th].includes(p)); mt.roleId = 17; m.roles.use(mt, [spy.id]); ok(!spy.cardUsed, 'dark mentor re-arms card'); }
+// --- mandatory curses
+{ const { m } = mk(); let bad = 0; const seen = new Set();
+  for (let i = 0; i < 400; i++) { const n = m.npcs.draw(); seen.add(n.curse); if (!['MANA_BOOST', 'MANA_DRAIN', 'TOXIC_FUMES', 'EYE_OF_TRUTH', 'GAGGING_SEAL'].includes(n.curse)) bad++; }
+  ok(bad === 0 && seen.size === 5, 'every captive carries one of the 5 core curses');
+  m.dbg.extendedCurses = true; let ext = 0; for (let i = 0; i < 400; i++) if (['CALL_OF_ABYSS', 'DARK_INITIATION'].includes(m.npcs.draw().curse)) ext++;
+  ok(ext > 0, 'extended curse toggle adds Abyss/Initiation');
+  ok(m.npcs.draw({ curse: 'NONE' }).curse !== 'NONE', 'forced invalid curse falls back to a real curse'); }
+// --- debug timers & buffer skip
+{ const { m, P } = mk(); m.debug.run(P(0), 'set_timers', { timers: { vote: 12, revealBack: 2, phaseTransitionBufferSeconds: 0 }, workSec: 30, holdMul: 0.5 });
+  ok(m.timers.vote === 12 && m.timers.revealBack === 2 && m.dbg.workSec === 30 && m.dbg.holdMul === 0.5, 'set_timers applies');
+  ok(Math.abs(m.bars.tickX - (1 / 6) * 1.5 / 30) < 1e-9, 'work duration drives red tick');
+  const pt = [...m.tasks.active.values()].flatMap(t => m.tasks.points(t)).find(q => q.hold && q.need > 0);
+  ok(!pt || pt.need < 5, 'hold multiplier applied to points');
+  toVote(m); const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id); ok(m.cer.t === 12, 'vote countdown uses override');
+  until(m, CER.EXECUTION); m.cer.sacrificeNpc(m.npcs.altar()[0]); ok(m.cer.sub !== CER.RESULT, 'buffer 0 skips outcome card');
+  m.debug.run(P(0), 'reset_timers'); ok(m.timers.vote === 6 && m.timers.phaseTransitionBufferSeconds === 3, 'reset timers'); }
 console.log(fails ? `\n${fails} FAILED` : '\nALL RULE TESTS PASSED');
 process.exit(fails ? 1 : 0);

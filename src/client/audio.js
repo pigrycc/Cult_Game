@@ -56,6 +56,9 @@ export class Audio {
       case 'rebellion': this.tone(220, 0.6, 'sawtooth', 0.2, 1.5); break;
       case 'milestone': this.sfx('gong'); break;
       case 'tick': this.tone(1000, 0.04, 'square', 0.05); break;
+      case 'holdtick': this.tone(520, 0.03, 'triangle', 0.04); break;
+      case 'holddone': this.tone(880, 0.12, 'triangle', 0.18); setTimeout(() => this.tone(1320, 0.22, 'triangle', 0.16), 90); break;
+      case 'cancel': this.tone(300, 0.22, 'square', 0.1, 0.5); break;
       case 'fumes': this.noise(2, 0.15, 300); break;
       case 'clank': this.tone(180, 0.2, 'square', 0.15, 0.6); break;
       case 'puff': this.noise(0.25, 0.15, 600); break;

@@ -17,8 +17,8 @@ const STATIC_TARGETS = [
   { id: 'mirror', x: LOBBY_MIRROR.x, y: 1.4, z: LOBBY_MIRROR.z + 0.4, label: '🪞 Mirror — choose robe colour [E]', range: 3 },
   { id: 'spyhole', x: SPYHOLE.x, y: SPYHOLE.y + 0.2, z: SPYHOLE.z + 0.3, label: '👁️ Spyhole — peek at the rejected captives [E]', range: 2.4 },
   { id: 'bolt', x: 3.75, y: 1.5, z: 18.4, label: '🔩 Cold Room bolt — slide to lock/unlock [E]', range: 2.4 },
-  { id: 'door_out', x: 3.75, y: 1.1, z: 17.4, label: '🚪 Hold [E] to keep the Cold Room door open', range: 2.4, hold: true },
-  { id: 'door_in', x: 4.3, y: 1.1, z: 17.0, label: '🚪 Hold [E] to push the door open from inside', range: 2.0, hold: true },
+  { id: 'door_out', x: 3.75, y: 1.1, z: 17.4, label: '🚪 Hold [E] to keep the Cold Room door open', range: 2.4, hold: true, need: 0, verb: 'Holding the door open' },
+  { id: 'door_in', x: 4.3, y: 1.1, z: 17.0, label: '🚪 Hold [E] to push the door open from inside', range: 2.0, hold: true, need: 0, verb: 'Pushing the door open' },
 ];
 
 export class Game {
@@ -60,10 +60,11 @@ export class Game {
     this.vmHeld = new THREE.Group(); this.vm.add(this.vmHeld); this.vmHeldKey = '';
     // own body (only robe visible to you; full model visible in the lobby mirror)
     this.self = makeMinion('#d9b23a'); this.scene.add(this.self);
-    const hideParts = [this.self.userData.head, ...this.self.userData.hands];
-    hideParts.forEach(o => { o.visible = false; });
+    // Own body is never drawn in the FPP view (it would cover the lower screen when looking down);
+    // it is only shown inside the lobby mirror's reflection pass.
+    this.self.visible = false;
     const mirror = this.scene.children.find(o => o.isReflector || o.material?.uniforms?.tDiffuse);
-    if (mirror) { const orig = mirror.onBeforeRender.bind(mirror); mirror.onBeforeRender = (...a) => { hideParts.forEach(o => { o.visible = true; }); orig(...a); hideParts.forEach(o => { o.visible = false; }); }; }
+    if (mirror) { const orig = mirror.onBeforeRender.bind(mirror); mirror.onBeforeRender = (...a) => { this.self.visible = !this.selfRagdoll; orig(...a); this.self.visible = false; }; }
     window.addEventListener('resize', () => {
       r.setSize(window.innerWidth, window.innerHeight);
       this.camera.aspect = this.vmCam.aspect = window.innerWidth / window.innerHeight;
@@ -130,8 +131,56 @@ export class Game {
     if (t.kind === 'player') { this.net.send({ t: 'use', target: 'player:' + t.pid }); return; }
     this.net.send({ t: 'use', target: t.id });
     this.holdingE = t.id;
+    // Predict the hold meter immediately (server confirms / corrects via state + holdEnd)
+    if (t.hold) this.localHold = { target: t.id, need: t.need || 0, start: performance.now(), label: t.verb || 'Working', coop: !!t.coop, door: t.id.startsWith('door'), confirmed: false };
   }
-  releaseE() { if (this.holdingE) { this.net.send({ t: 'release' }); this.holdingE = null; } }
+  releaseE() {
+    if (!this.holdingE) return;
+    this.net.send({ t: 'release' });
+    this.holdingE = null;
+    const h = this.localHold;
+    if (h) {
+      this.localHold = null;
+      const el = (performance.now() - h.start) / 1000;
+      if (h.need > 0 && el < h.need - 0.05) this.holdCancelled(h.confirmed ? '✖ Cancelled — progress lost' : '✖ Cancelled');
+      else if (h.need === 0 && h.confirmed) this.ui.holdFeedback('cancel', h.door ? 'Door released' : '✖ Let go');
+      this.lastLocalCancel = performance.now();
+    }
+  }
+  holdCancelled(label) { this.ui.holdFeedback('cancel', label); this.audio.sfx('cancel'); }
+  /** Server-side end of a hold: 'done' (completed) or 'cancel' (interrupted: knocked down, out of range, task gone…). */
+  onHoldEnd(m) {
+    const h = this.localHold;
+    if (m.reason === 'done') { this.ui.holdFeedback('done', `✔ ${h?.label || 'Done'}!`); this.audio.sfx('holddone'); this.localHold = null; return; }
+    if (performance.now() - (this.lastLocalCancel || 0) < 600) return;          // already shown locally
+    if (h) { this.localHold = null; this.holdCancelled('✖ Interrupted!'); }
+  }
+
+  /** Hold meter state for this frame (prediction + server reconciliation). */
+  holdView() {
+    const now = performance.now(), you = this.st.you, sh = you.hold;
+    let h = this.localHold;
+    if (!h && sh) h = this.localHold = { target: sh.target, need: sh.need, start: now - sh.t * 1000, label: 'Working', confirmed: true };
+    if (!h) return null;
+    if (sh && sh.target === h.target) {
+      h.confirmed = true;
+      if (sh.need > 0) {
+        h.need = sh.need;
+        const serverT = sh.t + (now - (this.stateAt || now)) / 1000;
+        const el = (now - h.start) / 1000;
+        if (Math.abs(el - serverT) > 0.25) h.start = now - serverT * 1000;
+      }
+    } else if (!sh && now - h.start > 600 && !h.done) { this.localHold = null; return null; }     // server refused (toast explains)
+    if (h.need > 0) {
+      const el = (now - h.start) / 1000;
+      return { frac: Math.min(1, el / h.need), left: h.need - el, label: h.label };
+    }
+    let coopFrac = null, label = h.label;
+    const uid = h.target.startsWith('task:') ? +h.target.split(':')[1] : null;
+    const task = uid != null ? this.st.tasks.find(t => t.uid === uid) : null;
+    if (task) { coopFrac = task.progress; label = task.progress > 0.001 && task.progress < 0.999 && this.lastCoop !== undefined && task.progress > this.lastCoop ? `${task.name} — working together` : `${task.name} — waiting for partner(s)`; this.lastCoop = task.progress; }
+    return { continuous: true, coopFrac, label };
+  }
 
   lmb() {
     this.slapT = 0.3;
@@ -160,6 +209,7 @@ export class Game {
   onState(st) {
     const prev = this.st;
     this.st = st;
+    this.stateAt = performance.now();
     this.me = st.players.find(p => p.id === this.myId);
     if (this.me) setMinionColor(this.self, this.me.color);
     if (this.me) setGhost(this.self, !!this.me.ghost);
@@ -340,7 +390,7 @@ export class Game {
     if (st.phase === PHASE.LOBBY) out.push(STATIC_TARGETS[0]);
     if (working) {
       out.push(...STATIC_TARGETS.slice(2));
-      for (const t of st.tasks) for (const pt of t.points) { if (pt.pad) continue; out.push({ id: pt.id, x: pt.x, y: pt.y, z: pt.z, label: pt.label, hold: pt.hold, range: INTERACT_RANGE + (pt.high ? 1.3 : 0.4), task: t }); }
+      for (const t of st.tasks) for (const pt of t.points) { if (pt.pad) continue; out.push({ id: pt.id, x: pt.x, y: pt.y, z: pt.z, label: pt.label, hold: pt.hold, need: pt.need, verb: pt.verb, coop: pt.coop, range: INTERACT_RANGE + (pt.high ? 1.3 : 0.4), task: t }); }
       for (const t of st.world.tools) if (!t.heldBy) out.push({ id: 'tool:' + t.id, x: t.x, y: t.y + 0.35, z: t.z, label: `Pick up ${TOOLS[t.type].name} [E]`, range: 2.8 });
       for (const i of st.world.items) if (!i.heldBy) { const bp = i.wild ? this.booksPos.get(i.id) || i : i; out.push({ id: 'item:' + i.id, x: bp.x, y: bp.y + 0.2, z: bp.z, label: i.wild ? 'Catch the biting book! [E]' : `Pick up ${ITEM_TYPES[i.type].name} [E]`, range: i.wild ? 2.8 : 2.6 }); }
     }
@@ -438,7 +488,7 @@ export class Game {
     // own body
     this.self.position.set(px, py, pz); this.self.rotation.y = this.yaw;
     animateMinion(this.self, dt, { speed: Math.hypot(b.vx, b.vz), ragdoll: b.ragdoll, spin: b.spin });
-    this.self.visible = !rag;
+    this.selfRagdoll = rag;
 
     // ---- remote minions
     const lookout = you.lookout;
@@ -489,7 +539,8 @@ export class Game {
     this.ui.setPrompt(this.promptFor(this.target));
     if (this.target?.kind === 'npc' && Math.hypot(this.target.x - b.x, this.target.z - b.z) <= NPC_INSPECT_RANGE + 0.3) this.ui.setTooltip(this.ui.npcTooltip(this.target.npc));
     else this.ui.setTooltip(null);
-    this.ui.setHold(you.hold && you.hold.need > 0 ? Math.min(1, you.hold.t / you.hold.need) : you.hold ? 1 : null);
+    this.ui.setHold(this.holdView());
+    if (this.localHold && this.localHold.need > 0) { this.holdTick = (this.holdTick || 0) + dt; if (this.holdTick > 0.32) { this.holdTick = 0; this.audio.sfx('holdtick'); } }
     document.getElementById('roomName').textContent = (ROOMS[roomAt(b.x, b.z)]?.icon || '') + ' ' + (ROOMS[roomAt(b.x, b.z)]?.name || 'Corridor');
 
     this.updateViewmodel(dt);
@@ -507,7 +558,7 @@ export class Game {
       this.vmHeldKey = key; this.vmHeld.clear();
       if (me.tool) {
         const t = makeTool(me.tool);
-        t.scale.setScalar(0.5); t.position.set(0.22, -0.46, -1.0); t.rotation.set(1.25, 0, 0.35);
+        t.scale.setScalar(0.5); t.position.set(0.32, -0.98, -1.3); t.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0.05, 0.62, 0.78).normalize());
         if (me.tool === 'wrench' || me.tool === 'hammer' || me.tool === 'oilcan') { t.scale.setScalar(0.75); t.rotation.set(-0.35, 0.3, -0.2); t.position.set(0.3, -0.5, -0.6); }
         this.vmHeld.add(t);
         if (me.load) { const l = makeItem(me.load); l.scale.setScalar(0.6); l.position.set(0.24, -0.5, -0.7); this.vmHeld.add(l); }
@@ -552,7 +603,12 @@ export class Game {
       if (visible && !you.god && !you.lookout && wallsBetween(this.camera.position.x, this.camera.position.z, pos.x, pos.z, 1) > 0) visible = false;
       const lab = this.ui.labels.filter(l => l.id === id).pop();
       const bub = this.ui.bubbles.get(id);
-      list.push({ id, visible, x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H, scale: Math.max(0.55, Math.min(1, 7 / d)), html: this.ui.plateHtml(p, st, lab, bub && bub.until > now ? bub.text : null) });
+      // LOD: detailed card only when < 3 m AND looking directly at the minion
+      const toP = new THREE.Vector3(pos.x - this.camera.position.x, pos.y + 0.7 - this.camera.position.y, pos.z - this.camera.position.z).normalize();
+      const fwd = new THREE.Vector3(); this.camera.getWorldDirection(fwd);
+      const looking = this.target?.pid === id || fwd.dot(toP) > 0.975;
+      const detail = d < 3 && looking && !you.blind;
+      list.push({ id, visible, x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H, scale: detail ? 1 : Math.max(0.55, Math.min(1, 7 / d)), html: this.ui.plateHtml(p, st, lab, bub && bub.until > now ? bub.text : null, detail) });
     }
     this.ui.updatePlates(list);
   }
