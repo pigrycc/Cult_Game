@@ -37,6 +37,9 @@ export class TaskManager {
     this.active.clear(); this.items.clear(); this.coins.clear(); this.lard.clear(); this.respawnQ = [];
     this.bolted = false;
   }
+  /** Hold duration after the debug multiplier. */
+  need(sec) { return sec * (this.m.dbg.holdMul ?? 1); }
+
   get poolSize() { return this.m.dbg.maxConcurrent ?? this.m.balance.pool; }
 
   fillPool() {
@@ -79,10 +82,10 @@ export class TaskManager {
     return inst;
   }
 
-  removeTask(inst) {
+  removeTask(inst, reason = 'cancel') {
     if (!inst) return;
     for (const p of this.m.list) {
-      if (p.hold?.uid === inst.uid) this.m.releaseHold(p);
+      if (p.hold?.uid === inst.uid) this.m.releaseHold(p, reason);
       if (p.carryHandle?.uid === inst.uid) p.carryHandle = null;
       if (p.load?.uid === inst.uid) p.load = null;
     }
@@ -99,7 +102,7 @@ export class TaskManager {
     this.m.fx('taskdone', { x: pos.x, y: pos.y, z: pos.z, name: inst.def.name });
     this.m.log(`${inst.def.name} done by ${names.join(', ')}`);
     if (inst.def.lard && inst.data.lardId) this.lard.delete(inst.data.lardId);
-    this.removeTask(inst);
+    this.removeTask(inst, 'done');
     this.respawnQ.push(this.m.timers.taskRespawnDelay);
     this.m.bars.addTaskProgress(1);
   }
@@ -176,15 +179,15 @@ export class TaskManager {
       case 'hold': {
         let s = d.spots[inst.rep % Math.max(1, d.spots.length)];
         if (d.lard) { const l = this.lard.get(inst.data.lardId); if (l) s = { x: l.x, y: 0.05, z: l.z }; }
-        if (s) pt('spot', s, `${d.name}${d.tool ? ' — needs ' + TOOLS[d.tool].name : ''} (hold E)`, true, { tool: d.tool });
+        if (s) pt('spot', s, `${d.name}${d.tool ? ' — needs ' + TOOLS[d.tool].name : ''} (hold E)`, true, { tool: d.tool, need: this.need(d.time), verb: d.name });
         break;
       }
-      case 'stack': pt('spot', d.spots[0], `${d.name} — ride a friend's back (E on them) + ${TOOLS[d.tool].name}, hold E`, true, { tool: d.tool, high: true }); break;
+      case 'stack': pt('spot', d.spots[0], `${d.name} — ride a friend's back (E on them) + ${TOOLS[d.tool].name}, hold E`, true, { tool: d.tool, high: true, need: this.need(d.time), verb: 'Tightening the main valve' }); break;
       case 'fetch': case 'books':
         if (d.src) pt('src', d.src, d.tool ? `Scoop ${ITEM_TYPES[d.item].name} (needs ${TOOLS[d.tool].name})` : `Take ${ITEM_TYPES[d.item].name}`, false, { tool: d.tool });
-        d.steps.forEach((s, i) => pt('s' + i, s, `${i === d.steps.length - 1 ? 'Deliver' : 'Process'} ${ITEM_TYPES[d.item].name}${s.time ? ' (hold E)' : ''}`, s.time > 0, { step: i }));
+        d.steps.forEach((s, i) => pt('s' + i, s, `${i === d.steps.length - 1 ? 'Deliver' : 'Process'} ${ITEM_TYPES[d.item].name}${s.time ? ' (hold E)' : ''}`, s.time > 0, { step: i, need: this.need(s.time || 0), verb: `${i === d.steps.length - 1 ? 'Delivering' : 'Processing'} ${ITEM_TYPES[d.item].name}` }));
         break;
-      case 'coop': d.handles.forEach((h, i) => pt('h' + i, h, `${d.name} — handle ${i + 1}/${d.handles.length} (hold E together)`, true)); break;
+      case 'coop': d.handles.forEach((h, i) => pt('h' + i, h, `${d.name} — handle ${i + 1}/${d.handles.length} (hold E together)`, true, { need: 0, verb: d.name, coop: true })); break;
       case 'bell': d.handles.forEach((h, i) => pt('r' + i, h, `Bell rope ${i + 1} — pull in order 1-2-3 (3 minions)`, false)); break;
       case 'bellows': d.handles.forEach((h, i) => pt('p' + i, h, `Bellows pad ${i + 1} — jump on it, alternate with partner`, false, { pad: true })); break;
       case 'carry': {
@@ -193,7 +196,7 @@ export class TaskManager {
         pt('goal', d.target, `Destination: ${d.name}`, false, { goal: true });
         break;
       }
-      case 'relay': pt('pile', d.pile, 'Drop a sandbag over the threshold (hold E)', true); pt('goal', d.target, 'Acid puddle — dump the sandbag (E)', false); break;
+      case 'relay': pt('pile', d.pile, 'Drop a sandbag over the threshold (hold E)', true, { need: this.need(d.time), verb: 'Dropping a sandbag' }); pt('goal', d.target, 'Acid puddle — dump the sandbag (E)', false); break;
       case 'carcass': pt('goal', d.target, 'Butcher table — deliver the carcass (E)', false); break;
       case 'calib': pt('scale', d.scale, 'Balance Scale — weigh the reagents (E)', false); pt('scroll', d.scroll, 'Recipe Scroll — read & dictate over the intercom (E)', false); break;
       case 'runes': pt('spot', d.spots[0], 'Runic Dictionary — find the glowing wall rune (E)', false); break;
@@ -250,12 +253,12 @@ export class TaskManager {
     switch (d.mech) {
       case 'hold':
         if (d.tool && !needTool(d.tool)) return;
-        p.hold = { target, uid: inst.uid, need: d.time, pos: pt, onDone: () => this.repDone(inst, p) };
+        p.hold = { target, uid: inst.uid, need: this.need(d.time), pos: pt, onDone: () => this.repDone(inst, p) };
         break;
       case 'stack':
         if (!p.ridingOn) return this.m.toast(p.id, 'Too high! Climb on another minion\'s back first (E on a minion).', 'warn');
         if (!needTool(d.tool)) return;
-        p.hold = { target, uid: inst.uid, need: d.time, pos: pt, high: true, onDone: () => this.complete(inst, [p, this.m.P(p.ridingOn)]) };
+        p.hold = { target, uid: inst.uid, need: this.need(d.time), pos: pt, high: true, onDone: () => this.complete(inst, [p, this.m.P(p.ridingOn)]) };
         break;
       case 'fetch': case 'books': this.useFetch(p, inst, part, pt, needTool); break;
       case 'coop': p.hold = { target, uid: inst.uid, need: Infinity, pos: pt, handle: +part.slice(1) }; break;
@@ -264,7 +267,7 @@ export class TaskManager {
       case 'relay':
         if (part === 'pile') {
           if ([...this.items.values()].some(i => i.taskUid === inst.uid)) return this.m.toast(p.id, 'A sandbag is already waiting to be carried.');
-          p.hold = { target, uid: inst.uid, need: d.time, pos: pt, onDone: () => { const it = this.makeItem('sandbag', d.drop.x, 0.2, d.drop.z, inst.uid); it.dropper = p.id; inst.participants.add(p.id); this.m.toast(p.id, 'Sandbag dropped — your partner must haul it to the acid!'); } };
+          p.hold = { target, uid: inst.uid, need: this.need(d.time), pos: pt, onDone: () => { const it = this.makeItem('sandbag', d.drop.x, 0.2, d.drop.z, inst.uid); it.dropper = p.id; inst.participants.add(p.id); this.m.toast(p.id, 'Sandbag dropped — your partner must haul it to the acid!'); } };
         } else if (part === 'goal') {
           const it = this.items.get(p.heldItem);
           if (!it || it.taskUid !== inst.uid) return this.m.toast(p.id, 'Bring a sandbag here.');
@@ -327,7 +330,7 @@ export class TaskManager {
         if (d.mech === 'books' && inst.rep < d.reps && this.active.has(inst.uid)) this.spawnBook(inst);
       } else this.m.fx('taskstep', { x: pt.x, y: pt.y, z: pt.z });
     };
-    if (step.time > 0) p.hold = { target: pt.id, uid: inst.uid, need: step.time, pos: pt, onDone: finish };
+    if (step.time > 0) p.hold = { target: pt.id, uid: inst.uid, need: this.need(step.time), pos: pt, onDone: finish };
     else finish();
   }
 
@@ -461,7 +464,7 @@ export class TaskManager {
       if (p.body.ragdoll > 0 || p.frozen || (h.uid && !this.active.has(h.uid)) || !this.inRange(p, h.pos, h.high ? 1.4 : 1.0)) { this.m.releaseHold(p); continue; }
       if (h.need === Infinity) continue;
       p.holdT += dt;
-      if (p.holdT >= h.need) { const fn = h.onDone; this.m.releaseHold(p); fn && fn(); }
+      if (p.holdT >= h.need) { const fn = h.onDone; this.m.releaseHold(p, 'done'); fn && fn(); }
     }
 
     for (const inst of [...this.active.values()]) {

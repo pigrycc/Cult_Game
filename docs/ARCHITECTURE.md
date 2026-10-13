@@ -44,7 +44,8 @@
 | `STATE_CEREMONY` | Red frozen, barriers up | debate timer ends → WORK; FINAL milestone or Chaos-Leader living sacrifice → FINALE |
 | `STATE_FINALE` | winner by altar majority, tie → Chaos | host → LOBBY |
 
-Ceremony sub-states: `ANNOUNCE (3 s) → NOMINATE → VOTE → COUNT → REACTION → (success → NOMINATE again | fail → EXECUTION) → CURSE → EVENT → DEBATE`.
+Ceremony sub-states: `ANNOUNCE (3 s) → NOMINATE → VOTE → COUNT → REACTION → RESULT → (success → NOMINATE again | fail → EXECUTION) → RESULT → CURSE → RESULT → EVENT → RESULT → DEBATE`.
+`RESULT` is the phase-transition buffer (`timers.phaseTransitionBufferSeconds`, default 3 s, 0 = skip): an outcome card (rebellion result, sacrifice + curse + crystal changes, milestone-event resolution) shown to everyone before the next step.
 Freezing / blinding per sub-state is centralised in `Ceremony.applyFreeze()`.
 
 ## 4. Subsystems
@@ -53,7 +54,7 @@ Freezing / blinding per sub-state is centralised in `Ceremony.applyFreeze()`.
 |---|---|
 | `ProgressBars` | Red `+X every T` (X auto = segment·T/workTime), Yellow `+segment/requiredTasks` per task, milestone markers k/M |
 | `TaskManager` | 32 tasks / 7 rooms, 12 mechanics (hold, fetch, books, coop, bell, bellows, carry, relay, carcass, stack, calib, runes), tools, items, coins, steam geysers, lard slips, cold-room door & bolt |
-| `NpcSystem` | captive pool, Selection Chamber, altar, Prison, glyph authorisation (fog of war), spyhole |
+| `NpcSystem` | captive pool (every captive rolls a faction AND a mandatory curse: Mana Boost, Mana Drain, Toxic Fumes, Insight Eye, Gagging Seal; debug toggle adds Call of the Abyss / Dark Initiation), Selection Chamber, altar, Prison, glyph authorisation (fog of war), spyhole |
 | `Ceremony` | nomination, mutiny resolution, execution, curses, milestone events, debate, exhaustion |
 | `Roles` | 21 card abilities with timing windows + target validation, `roleRevealed` broadcast |
 | `Bots` | FSM bots (idle / roamer / voter) with A* over a nav-node graph; always perform Master/Executioner duties |
@@ -79,6 +80,7 @@ state {phase, you{private}, players[ filtered ], gates{per viewer}, bars, track,
 reveal {faction, roleId, back, front}      roleRevealed {id, roleId, name}   ← RPC_BroadcastRoleRevealed
 toast | big | fx | chat {from,name,text,ch} | label {id,text,color,dur} | coins | finale {winner, reason, tally, reveal[], log[]}
 recipe | calibUI | runesUI | spyhole {list} | fanaticalOffer | converted
+holdEnd {reason: 'done'|'cancel', target}   ← drives the hold-meter success / cancel feedback
 ```
 `flags` bits: 1 frozen · 2 carried · 4 riding · 8 ghost · 16 working · 32 grounded.
 

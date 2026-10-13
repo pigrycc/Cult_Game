@@ -1,4 +1,4 @@
-const { chromium } = require('/root/.nvm/versions/node/v22.23.3/lib/node_modules/@playwright/mcp/node_modules/playwright');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const http = require('http'), fs = require('fs'), path = require('path'), { spawn } = require('child_process');
 const root = path.join(__dirname, '..', 'dist', 'client');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
@@ -7,7 +7,7 @@ const srv = spawn('node', [path.join(__dirname, '..', 'dist', 'server.cjs'), '77
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   await sleep(700);
-  const browser = await chromium.launch({ executablePath: '/opt/playwright/chromium-1232/chrome-linux64/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 800, height: 500 } });
   page.on('pageerror', e => console.log('PAGEERROR', e.message));
   await page.goto('http://127.0.0.1:8098/?join=127.0.0.1:7798&token=dedicated&name=Host');

@@ -24,7 +24,7 @@ export class ProgressBars {
   get tickT() { return this.m.dbg.redT; }
   get tickX() {
     if (this.m.dbg.redX != null) return this.m.dbg.redX;
-    return this.segment * this.tickT / this.m.balance.work;
+    return this.segment * this.tickT / (this.m.dbg.workSec ?? this.m.balance.work);
   }
 
   tick(dt) {

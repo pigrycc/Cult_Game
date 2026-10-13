@@ -28,13 +28,13 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 #menuErr { color: #ff8a6a; min-height: 20px; margin-top: 8px; }
 
 /* ---------- dual progress bar ---------- */
-#bar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: min(600px, calc(100vw - 840px)); min-width: 360px; }
+#bar { position: absolute; top: 36px; left: 50%; transform: translateX(-50%); width: min(600px, calc(100vw - 840px)); min-width: 360px; }
 #barTrack { position: relative; height: 22px; background: #140f0c; border: 2px solid #6a5030; border-radius: 11px; overflow: visible; box-shadow: 0 0 12px #000; }
 #barYellow, #barRed { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 9px; transition: width .25s linear; }
 #barYellow { background: linear-gradient(#ffe57a, #e0a020); box-shadow: 0 0 10px #ffcf40; }
 #barRed { background: linear-gradient(#ff5050cc, #a01010cc); height: 50%; top: 50%; box-shadow: 0 0 8px #ff2020; }
 #barMarkers .marker { position: absolute; top: -6px; bottom: -6px; width: 3px; background: #f0e2c0; transform: translateX(-50%); }
-#barMarkers .marker span { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); font-size: 16px; }
+#barMarkers .marker span { position: absolute; top: -24px; left: 50%; transform: translateX(-50%); font-size: 16px; line-height: 18px; white-space: nowrap; }
 #barMarkers .marker.done { background: #6aff6a; }
 #barLabel { text-align: center; font-size: 12px; margin-top: 4px; text-shadow: 0 0 4px #000, 0 0 4px #000; }
 #barLabel .red { color: #ff6a6a; } #barLabel .yel { color: #ffd75e; } #barLabel .frz { color: #8ad8ff; }
@@ -49,19 +49,34 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .tbCoin { color: #ffd34d; }
 .tbProg { height: 3px; background: #333; border-radius: 2px; margin-top: 2px; }
 .tbProg div { height: 100%; background: #ffd75e; border-radius: 2px; }
-#roomName { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); font-size: 14px; opacity: .8; text-shadow: 0 0 4px #000; }
+#roomName { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); font-size: 14px; opacity: .8; text-shadow: 0 0 4px #000; }
 #minimap { position: absolute; top: 10px; right: 10px; width: 180px; height: 180px; border: 1px solid #5a4430; border-radius: 6px; opacity: .9; }
 #minimap.bigmap { width: 440px; height: 440px; }
 #lobbyInfo { position: absolute; top: 10px; left: 10px; background: rgba(12,9,7,.8); border: 1px solid #6a5030; border-radius: 6px; padding: 10px 14px; min-width: 280px; }
 #lobbyInfo .pc { font-size: 22px; color: #6aff8a; font-weight: bold; }
 #lobbyInfo button { margin-top: 8px; font-size: 18px; }
 .lobbyList { margin-top: 8px; font-size: 13px; }
-#phaseTimer { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); font-size: 24px; color: #ffe28a; text-shadow: 0 0 6px #000; }
+#phaseTimer { position: absolute; top: 122px; left: 50%; transform: translateX(-50%); font-size: 24px; color: #ffe28a; text-shadow: 0 0 6px #000; }
 #phaseTimer span { font-size: 13px; opacity: .8; }
 
 /* ---------- center ---------- */
 #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font: 22px Arial; color: #fff; opacity: .8; text-shadow: 0 0 3px #000; }
-#holdRing { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; transform: translate(-50%, -50%); border-radius: 50%; -webkit-mask: radial-gradient(transparent 55%, #000 57%); mask: radial-gradient(transparent 55%, #000 57%); display: none; }
+#holdBox { position: absolute; left: 50%; top: 50%; width: 0; height: 0; display: none; }
+#holdRing { position: absolute; left: -30px; top: -30px; width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(#ffd75e 0deg, rgba(255,255,255,.15) 0); -webkit-mask: radial-gradient(transparent 58%, #000 60%); mask: radial-gradient(transparent 58%, #000 60%); }
+#holdPct { display: none; }
+#holdInfo { position: absolute; left: -130px; top: 64px; width: 260px; text-align: center; }
+#holdLabel { font-size: 14px; text-shadow: 0 0 4px #000, 0 0 6px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#holdBar { height: 8px; margin-top: 3px; background: rgba(0,0,0,.6); border: 1px solid #8a6a3a; border-radius: 4px; overflow: hidden; }
+#holdFill { height: 100%; width: 0; background: linear-gradient(90deg, #e0a020, #ffe57a); }
+#holdBox.continuous #holdRing { background: conic-gradient(#4ff0ff 0deg 360deg) !important; animation: pulseRing 1s infinite alternate; }
+#holdBox.continuous #holdFill { background: linear-gradient(90deg, #2aa8c0, #9ff4ff); }
+#holdBox.done #holdRing { background: #6aff6a !important; animation: none; }
+#holdBox.done #holdFill { background: #6aff6a; width: 100% !important; }
+#holdBox.cancel #holdRing { background: #ff4a3a !important; animation: shake .25s; }
+#holdBox.cancel #holdFill { background: #ff4a3a; }
+#holdBox.done #holdLabel { color: #8aff8a; } #holdBox.cancel #holdLabel { color: #ff8a7a; }
+@keyframes pulseRing { from { opacity: .45; } to { opacity: 1; } }
+@keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 #prompt { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); font-size: 15px; text-align: center; text-shadow: 0 0 4px #000, 0 0 6px #000; max-width: 60vw; }
 #tooltip { position: absolute; left: calc(50% + 40px); top: calc(50% - 40px); display: flex; gap: 10px; align-items: center; background: rgba(12,9,7,.85); border: 1px solid #8a6a3a; border-radius: 6px; padding: 8px 12px; max-width: 340px; font-size: 13px; }
 #tooltip .glyph.unknown { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: 34px; color: #888; border: 3px dashed #555; border-radius: 50%; }
@@ -169,3 +184,16 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 #debug label { display: block; margin: 4px 0; } #debug button { font: 11px Consolas, monospace; padding: 2px 6px; margin: 2px 2px 2px 4px; background: #2a3448; border-color: #5a6a8a; color: #d0d8e8; }
 #debug select, #debug input { font: 11px Consolas, monospace; background: #0e1018; color: #d0d8e8; border-color: #3a4a6a; }
 #debug .npcCfg div { margin: 2px 0; }
+
+/* ---------- nameplate LOD ---------- */
+.pRole { font-size: 22px; filter: drop-shadow(0 0 4px #000); }
+.pCard { background: rgba(12,9,7,.9); border: 1px solid #8a6a3a; border-radius: 8px; padding: 6px 10px; margin-bottom: 4px; width: 260px; white-space: normal; text-align: left; font-family: Arial, sans-serif; font-size: 12px; color: #e8dcc0; box-shadow: 0 0 10px #000; }
+.pCard .pcName { font-size: 15px; font-weight: bold; color: #fff; } .pCard .pcRole { margin-top: 4px; color: #ffcf66; }
+.pCard .pDesc { font-size: 11px; opacity: .85; margin-top: 2px; } .pCard .pcFac { margin-top: 4px; }
+.pCard .pcStat { margin-top: 4px; font-size: 11px; color: #c8b890; }
+/* ---------- ceremony outcome card ---------- */
+.sumCard { padding: 4px 6px; } .sumIcon { font-size: 40px; } .sumTitle { font-size: 22px; font-weight: bold; margin: 2px 0 6px; }
+.sumLine { font-size: 14px; margin: 3px 0; } .sumTimer { font-size: 12px; opacity: .65; margin-top: 8px; }
+.sumGlyph { float: left; margin-right: 8px; }
+#debug .tgrid { display: grid; grid-template-columns: 1fr 64px; gap: 2px 6px; align-items: center; }
+#debug .tgrid input { width: 60px; }

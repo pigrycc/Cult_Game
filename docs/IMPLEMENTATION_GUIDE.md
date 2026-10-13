@@ -49,9 +49,9 @@ To add a room: add a `rectRoom` (+ door gaps in the neighbour), a `ROOMS` entry,
 * `updateHud(state)` (10 Hz): dual progress bar (Yellow layer, thin Red layer, milestone markers
   with event icons), task board, lobby counter `PLAYERS: X / 11 (MIN. 5)` + START, role card with
   usable glow, statuses, ceremony panel (vote buttons, sequential crystal counter vs threshold).
-* Per frame: crosshair prompt, hold ring, NPC glyph tooltip (<2 m, SVG colour = faction,
+* Per frame: crosshair prompt, hold meter (radial dial + bar under the reticle, predicted locally from the point's `need`, reconciled with the host; `holdEnd` plays the done / cancel flash and sound; releasing E early cancels), NPC glyph tooltip (<2 m, SVG colour = faction,
   shape = curse), nameplates projected from 3D (white by default; 🩸 pact, inspected icons,
-  public role icons, status icons, speech bubbles), blind/drunk/ghost overlays.
+  public role icons, status icons, speech bubbles) with distance LOD — beyond 3 m only the role icon floats above the name; under 3 m with the crosshair on the minion the plate expands into a card with role name, description, card status and the faction *only if revealed to you*, blind/drunk/ghost overlays.
 * Reveal screen: CSS 3D card flip with faction glow, 5 s + 5 s timers.
 * FPP viewmodel is a second scene rendered after clearing depth, so oversized tools never clip.
 
@@ -67,4 +67,5 @@ debate seconds, mutiny threshold, work-phase length and exhaustion count per pla
 3. `Instant Fill` → ceremony: nominate with LMB, vote 1–4, watch the counter; `Force Milestone Event`
    and `Configure Selection Chamber NPCs` (e.g. Toxic Fumes) to test each branch.
 4. `Force Role` 1–21 + `Reset Role Cooldown` to test every card in its window.
-5. `Override Altar Tally` 2/2/1 before the last milestone → tie → Chaos win. `Trigger Crypt Explosion` → loss screen.
+5. Section **7. Timers** overrides every countdown (reveal back/front, work-phase pace, nomination, mutiny voting, reaction, execution, events, debate, hold-time multiplier, `phaseTransitionBufferSeconds`); `Skip transition buffers` sets the outcome-card pause to 0.
+6. `Override Altar Tally` 2/2/1 before the last milestone → tie → Chaos win. `Trigger Crypt Explosion` → loss screen.

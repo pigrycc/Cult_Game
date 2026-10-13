@@ -2,7 +2,7 @@
 //  DEBUG MENU / DEV CONSOLE (F1) — ImGui-style overlay. Every control sends a
 //  host-validated {t:'debug', cmd, a} packet (see server/Debug.js).
 // ============================================================================
-import { ROLES, FACTIONS, CURSES, MILESTONE_EVENTS, CURSE_KEYS } from '../shared/constants.js';
+import { ROLES, FACTIONS, CURSES, MILESTONE_EVENTS, CURSE_KEYS, TIMER_LABELS, DEFAULT_TIMERS } from '../shared/constants.js';
 import { TASKS, TASK_KEYS } from '../shared/tasks.js';
 
 const opt = (v, l, sel) => `<option value="${v}" ${sel ? 'selected' : ''}>${l}</option>`;
@@ -50,7 +50,9 @@ export class DebugMenu {
         <label>Force Master <select id="dMaster">${this.playerOptions(true)}</select> Executioner <select id="dExec">${this.playerOptions(true)}</select><button data-c="duo">Apply</button></label>
         <label>Force Milestone Event <select id="dEv">${opt('', 'Track default')}${['EMPTY', 'INSPECTION', 'FLOGGING', 'RENEWAL', 'MUTENESS', 'LIVING'].map(k => opt(k, MILESTONE_EVENTS[k].icon + ' ' + MILESTONE_EVENTS[k].name, d.forcedEvent === k)).join('')}</select><button data-c="ev">Set</button></label>
         <div class="npcCfg">${[0, 1, 2].map(i => `<div>NPC ${i + 1}: <select id="dNF${i}">${opt('', 'random')}${Object.values(FACTIONS).map(f => opt(f, f)).join('')}</select><select id="dNC${i}">${opt('', 'random')}${CURSE_KEYS.map(k => opt(k, CURSES[k].name)).join('')}</select></div>`).join('')}
-          <button data-c="npcs">Configure Selection Chamber</button> <button data-c="npcclear">Random</button></div>
+          <button data-c="npcs">Configure Selection Chamber</button> <button data-c="npcclear">Random</button>
+          <label><input type="checkbox" id="dExtCur" ${d.extendedCurses ? 'checked' : ''}> Add extended curses to the random pool (Call of the Abyss, Dark Initiation)</label>
+          <div class="small">Every captive always carries a curse — "random" rolls from the curse pool.</div></div>
         <label>Debate Timer <input id="dDeb" type="number" value="${d.debateSec ?? ''}" placeholder="table" style="width:60px">s <input type="checkbox" id="dDebInf" ${d.debateInfinite ? 'checked' : ''}> ∞ <button data-c="debate">Set</button> <button data-c="debskip">End Debate</button></label>
         <button data-c="skip">Skip current ceremony step</button>
         <label>Override Altar Tally 🔥<input id="dTF" type="number" value="${st.tally.fire}" style="width:40px">🩸<input id="dTB" type="number" value="${st.tally.blood}" style="width:40px">🔮<input id="dTC" type="number" value="${st.tally.chaos}" style="width:40px"><button data-c="tally">Set</button></label>
@@ -66,6 +68,15 @@ export class DebugMenu {
         <label>Mutiny Threshold Override <input id="dMut" type="number" min="1" max="5" value="${d.mutinyThreshold ?? ''}" placeholder="table" style="width:60px"><button data-c="mut">Set</button></label>
         <div>Apply Status (target): ${[['fumes', 'Toxic Fumes'], ['silence', 'Curse of Silence'], ['exhaust', 'Exhaustion'], ['ragdoll', 'Ragdoll Stumble'], ['dismount', 'Knock off back'], ['key', 'Prison key'], ['clear', 'Clear']].map(([k, l]) => `<button data-s="${k}">${l}</button>`).join(' ')}</div>
         ${st.you.host ? `<label><input type="checkbox" id="dAll" ${d.debugAll ? 'checked' : ''}> Allow debug console for all clients</label>` : ''}
+      </details>
+      <details open><summary>7. Timers & Phase Durations</summary>
+        <div class="tgrid">
+          <span>Work Phase duration (Red Bar pace per milestone, table ${d.workDefault ?? '50–65'}s)</span><input id="dTwork" type="number" step="1" placeholder="${d.workDefault ?? ''}" value="${d.workSec ?? ''}">
+          <span>Debate window (table ${d.debateDefault ?? '30–45'}s)</span><input id="dTdebate" type="number" step="1" placeholder="${d.debateDefault ?? ''}" value="${d.debateSec ?? ''}">
+          <span>Hold-time multiplier (all [E] holds & machine processing)</span><input id="dThold" type="number" step="0.1" value="${d.holdMul ?? 1}">
+          ${Object.keys(TIMER_LABELS).map(k => `<span>${TIMER_LABELS[k]} <small>(def ${DEFAULT_TIMERS[k]})</small></span><input data-timer="${k}" type="number" step="0.5" value="${d.timers?.[k] ?? DEFAULT_TIMERS[k]}">`).join('')}
+        </div>
+        <button data-c="timers">Apply timers</button> <button data-c="buffer0">Skip transition buffers (0 s)</button> <button data-c="timersreset">Reset defaults</button>
       </details>`;
     const v = id => document.getElementById(id)?.value;
     const tgt = () => +v('dTarget');
@@ -96,6 +107,12 @@ export class DebugMenu {
         case 'cry': this.cmd('set_crystals', { pid: tgt(), n: +v('dCry') }); break;
         case 'gold': this.cmd('add_gold', { pid: tgt(), n: +v('dGold') }); break;
         case 'mut': this.cmd('mutiny_threshold', { n: +v('dMut') || null }); break;
+        case 'timers': {
+          const timers = {}; this.el.querySelectorAll('input[data-timer]').forEach(i => { timers[i.dataset.timer] = i.value; });
+          this.cmd('set_timers', { timers, workSec: v('dTwork'), debateSec: v('dTdebate'), holdMul: v('dThold'), applyNow: true }); break;
+        }
+        case 'buffer0': this.cmd('set_timers', { timers: { phaseTransitionBufferSeconds: 0 } }); break;
+        case 'timersreset': this.cmd('reset_timers'); setTimeout(() => this.build(), 300); break;
         default: break;
       }
     });
@@ -105,6 +122,7 @@ export class DebugMenu {
     document.getElementById('dFreeze').onchange = e => this.cmd('freeze_red', { on: e.target.checked });
     document.getElementById('dBotMode').onchange = e => this.cmd('bot_mode', { mode: e.target.value });
     document.getElementById('dBots').oninput = e => { document.getElementById('dBotsV').textContent = e.target.value; };
+    document.getElementById('dExtCur').onchange = e => this.cmd('extended_curses', { on: e.target.checked });
     const all = document.getElementById('dAll'); if (all) all.onchange = e => this.cmd('allow_debug_all', { on: e.target.checked });
     this.el.querySelectorAll('input,select').forEach(i => i.addEventListener('keydown', e => e.stopPropagation()));
   }

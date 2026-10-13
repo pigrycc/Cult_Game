@@ -12,7 +12,7 @@
 //   • Everyone, once a captive has been sacrificed (public tally)
 //   • Debug God Mode
 // ============================================================================
-import { CURSE_KEYS, FACTIONS, PHASE, CER } from '../shared/constants.js';
+import { CURSES, CORE_CURSES, EXTENDED_CURSES, FACTIONS, PHASE, CER } from '../shared/constants.js';
 import { NPC_SEATS, ALTAR_SPOTS, PRISON_SPOTS, PORTAL, roomAt } from '../shared/map.js';
 import { weighted, pick, dist2, shuffle } from './util.js';
 
@@ -30,10 +30,9 @@ export class NpcSystem {
 
   draw(forced = null) {
     const faction = forced?.faction || weighted([[FACTIONS.FIRE, 40], [FACTIONS.BLOOD, 40], [FACTIONS.CHAOS, 20]]);
-    const curse = forced?.curse || weighted([
-      ['NONE', 26], ['MANA_BOOST', 12], ['MANA_DRAIN', 12], ['EYE_OF_TRUTH', 10], ['TOXIC_FUMES', 10],
-      ['CALL_OF_ABYSS', 10], ['DARK_INITIATION', 10], ['GAGGING_SEAL', 10],
-    ]);
+    // Mandatory curse: there are no "vanilla" captives. Forced (debug) curses must be valid glyphs.
+    const pool = this.m.dbg.extendedCurses ? [...CORE_CURSES, ...EXTENDED_CURSES] : CORE_CURSES;
+    const curse = forced?.curse && CURSES[forced.curse] ? forced.curse : pick(pool);
     const n = { id: NID++, faction, curse, state: 'reserve', x: 0, y: 0, z: 0, carrier: null, discard: null, round: this.m.ceremonyIndex };
     this.npcs.set(n.id, n);
     return n;

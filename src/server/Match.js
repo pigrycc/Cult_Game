@@ -44,6 +44,7 @@ export class Match {
       debugAll: !!opts.debugAll, freezeRed: false, redX: null, redT: 1.5, yellowMul: 1,
       debateSec: null, debateInfinite: false, maxConcurrent: null, mutinyThreshold: null,
       forcedEvent: null, forcedNpcs: null, forcedDuo: null, botMode: 'roamer',
+      workSec: null, holdMul: 1, extendedCurses: false,
       forceFaction: new Map(), forceRole: new Map(),
     };
     this.bars = new ProgressBars(this);
@@ -367,10 +368,14 @@ export class Match {
 
   buck(p) { if (p.rider) { const r = this.P(p.rider); if (r) this.dismount(r, true); } }
 
-  releaseHold(p) { p.hold = null; p.holdT = 0; }
+  /** End a hold-to-interact. reason: 'done' | 'cancel' | 'silent' — the client plays matching feedback. */
+  releaseHold(p, reason = 'cancel') {
+    if (p.hold && reason !== 'silent' && !p.isBot) this.send(p.id, { t: 'holdEnd', reason, target: p.hold.target });
+    p.hold = null; p.holdT = 0;
+  }
 
   releaseAll(p) {
-    this.releaseHold(p);
+    this.releaseHold(p, 'silent');
     if (p.ridingOn) this.dismount(p, false);
     if (p.rider) { const r = this.P(p.rider); if (r) this.dismount(r, false); }
     if (p.carryHandle) this.tasks.releaseHandle(p);

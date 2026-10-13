@@ -39,6 +39,7 @@ async function connect(url, name, token) {
     converted: m => ui.big('🔮 You have been initiated', `You now secretly serve the Cult of Chaos. Your leader: ${m.leader}`, 5, '#b06bff'),
     finale: m => { document.exitPointerLock(); ui.finale(m, game.st?.you.host, () => net.send({ t: 'lobby' })); },
     teleport: m => game.onTeleport(m),
+    holdEnd: m => game.onHoldEnd(m),
     coins: m => { audio.sfx('coins'); ui.toast(`+${m.amount} 💰`, 'gold'); },
     reveal: m => { document.exitPointerLock(); ui.showReveal(m, () => ui.big('Click to enter the crypt', 'WASD move • E use/hold • LMB lift/slap • G role card • V talk • Enter chat • Tab board • F1 debug', 5, '#ffe28a')); },
     roleChanged: m => ui.toast(`🛠 Your role is now ${ROLE_BY_ID[m.roleId].name}`),

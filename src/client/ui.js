@@ -254,6 +254,11 @@ export class UI {
       if ((c.mode === 'eye' && st.execId === you.id) || (c.mode === 'abyss' && st.masterId === you.id) || (c.mode === 'initiation' && you.leader)) html += '<div class="cpNote big">Walk up to a minion and strike them (LMB)</div>';
     } else if (c.sub === CER.DEBATE) {
       html += `<div class="cpTitle">DEBATE — New Hazard in ${c.infinite ? '∞' : Math.ceil(c.t) + 's'}</div><div class="cpNote">Global voice [V] & chat [Enter] in the Sanctuary.${c.lastSacrifice ? ` Sacrificed: ${FACTION_INFO[c.lastSacrifice.faction].icon} ${FACTION_INFO[c.lastSacrifice.faction].short} • ${CURSES[c.lastSacrifice.curse].name}` : ''}</div>`;
+    } else if (c.sub === CER.RESULT && c.summary) {
+      const s = c.summary;
+      html += `<div class="sumCard">${s.glyph ? `<div class="sumGlyph">${glyphSVG(s.glyph.faction, s.glyph.curse, 64)}</div>` : ''}<div class="sumIcon">${s.icon || ''}</div>
+        <div class="sumTitle" style="color:${s.color || '#fff'}">${esc(s.title)}</div>${(s.lines || []).map(l => `<div class="sumLine">${esc(l)}</div>`).join('')}
+        <div class="sumTimer">Continuing in ${Math.ceil(c.t)}s…</div></div>`;
     } else if (c.sub === CER.ANNOUNCE) html += '<div class="cpTitle">Well Done — Execution in 3 sec</div>';
     if (cp.dataset.h === html) return;
     cp.dataset.h = html; cp.innerHTML = html;
@@ -262,7 +267,33 @@ export class UI {
 
   // ------------------------------------------------------------------ per-frame overlays
   setPrompt(text) { const p = $('#prompt'); if (p.dataset.t !== text) { p.dataset.t = text; p.innerHTML = text; } }
-  setHold(frac) { const r = $('#holdRing'); if (frac == null) { r.style.display = 'none'; return; } r.style.display = ''; r.style.background = `conic-gradient(#ffd75e ${frac * 360}deg, rgba(255,255,255,0.15) 0)`; }
+  /**
+   * Hold-to-interact meter (radial dial + horizontal bar under the reticle).
+   * h = { frac 0..1, label, left (s), continuous, coopFrac } or null.
+   */
+  setHold(h) {
+    const box = $('#holdBox');
+    if (this.holdFx && performance.now() < this.holdFx.until) return;      // keep done/cancel flash visible
+    if (this.holdFx) { box.classList.remove('done', 'cancel'); this.holdFx = null; }
+    if (!h) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.classList.toggle('continuous', !!h.continuous);
+    const f = Math.max(0, Math.min(1, h.continuous ? (h.coopFrac ?? 0) : h.frac));
+    if (!h.continuous) $('#holdRing').style.background = `conic-gradient(#ffd75e ${f * 360}deg, rgba(255,255,255,0.15) 0)`;
+    $('#holdFill').style.width = (f * 100).toFixed(1) + '%';
+    const txt = h.continuous ? `${h.label}${h.coopFrac != null ? ` — ${Math.round(f * 100)}%` : ''}` : `${h.label} — ${Math.max(0, h.left).toFixed(1)}s`;
+    $('#holdLabel').textContent = txt;
+  }
+  /** Completion / cancel flash for the hold meter. */
+  holdFeedback(kind, label) {
+    const box = $('#holdBox');
+    box.style.display = 'block';
+    box.classList.remove('done', 'cancel', 'continuous'); void box.offsetWidth;
+    box.classList.add(kind);
+    $('#holdLabel').textContent = label || (kind === 'done' ? '✔ Done!' : '✖ Cancelled');
+    if (kind === 'cancel') $('#holdFill').style.width = '0%';
+    this.holdFx = { until: performance.now() + (kind === 'done' ? 700 : 600) };
+  }
   setTooltip(html) { const t = $('#tooltip'); if (!html) { t.style.display = 'none'; return; } t.style.display = ''; if (t.dataset.h !== html) { t.dataset.h = html; t.innerHTML = html; } }
 
   npcTooltip(n) {
@@ -288,10 +319,17 @@ export class UI {
     for (const [id, el] of this.plates) if (!seen.has(id)) { el.remove(); this.plates.delete(id); }
   }
 
-  plateHtml(p, st, extraLabel, bubble) {
+  /**
+   * Nameplate with distance LOD.
+   *  far  (> 3 m or not looked at): role icon floating above the name (+ office/status icons)
+   *  near (< 3 m AND crosshair on the minion): detailed card — role name, description,
+   *        card status, faction (only if revealed to YOU per the social-deduction rules)
+   */
+  plateHtml(p, st, extraLabel, bubble, detail = false) {
     const you = st.you;
+    if (detail) return this.plateDetail(p, st, extraLabel, bubble);
     const top = [];
-    if (p.role) { const r = ROLE_BY_ID[p.role]; if (r && (p.id !== you.id)) top.push(`<span title="${esc(r.name)}">${r.icon}</span>`); }
+    if (p.role) { const r = ROLE_BY_ID[p.role]; if (r && (p.id !== you.id)) top.push(`<span class="pRole" title="${esc(r.name)}">${r.icon}</span>`); }
     if (p.master) top.push(STATUS_ICONS.master); if (p.exec) top.push(STATUS_ICONS.exec);
     if (p.exhausted) top.push(STATUS_ICONS.exhausted); if (p.muted) top.push(STATUS_ICONS.muted); if (p.gagged) top.push(STATUS_ICONS.gagged);
     if (p.fumes) top.push(STATUS_ICONS.fumes); if (p.ghost) top.push(STATUS_ICONS.ghost); if (p.key) top.push(STATUS_ICONS.key);
@@ -303,6 +341,30 @@ export class UI {
     const not = p.publicNot ? `<div class="pNot">not ${FACTION_INFO[p.publicNot].icon}</div>` : '';
     return `${bubble ? `<div class="bubble">${esc(bubble)}</div>` : ''}${extraLabel ? `<div class="pLabel" style="color:${extraLabel.color}">${esc(extraLabel.text)}</div>` : ''}
       <div class="pTop">${top.join(' ')}</div><div class="pName">${pre}${esc(p.name)} <span class="pCry">💎${p.crystals}</span></div>${not}`;
+  }
+
+  factionLine(p, st) {
+    if (p.faction && p.id !== st.you.id) return `${FACTION_INFO[p.faction].icon} ${FACTION_INFO[p.faction].name}${p.leader ? ' (Chaos Leader)' : ''} <small>— God Mode</small>`;
+    if (p.pact === 'blood') return '🩸 Cult of Blood <small>— your Blood Pact ally</small>';
+    if (p.known) return `${FACTION_INFO[p.known].icon} ${FACTION_INFO[p.known].name} <small>— revealed to you</small>`;
+    if (p.publicNot) return `Faction unknown — publicly <b>NOT</b> ${FACTION_INFO[p.publicNot].icon} ${FACTION_INFO[p.publicNot].name}`;
+    return 'Faction: <i>unknown</i>';
+  }
+
+  plateDetail(p, st, extraLabel, bubble) {
+    const r = p.role ? ROLE_BY_ID[p.role] : null;
+    const stat = [];
+    if (p.master) stat.push('👑 Master of Ceremonies'); if (p.exec) stat.push('🪓 Executioner');
+    if (p.exhausted) stat.push('💤 Exhausted (cannot be nominated)'); if (p.muted) stat.push('🤐 Cursed with muteness');
+    if (p.gagged) stat.push('🔇 Gagged'); if (p.fumes) stat.push('🤢 Intoxicated'); if (p.ghost) stat.push('👻 Ghost');
+    if (p.key) stat.push('🗝️ Holds the Prison key'); if (p.ridingOn) stat.push('🧗 Riding a minion'); if (p.rider) stat.push('🏋️ Carrying a rider');
+    const held = p.tool ? TOOLS[p.tool]?.name : p.item ? ITEM_TYPES[p.item]?.name : p.npc ? 'a bound captive' : null;
+    const cardState = p.roleUsed === undefined ? '(hidden from others)' : p.roleUsed ? 'card used — face up' : 'card re-armed — face down';
+    return `${bubble ? `<div class="bubble">${esc(bubble)}</div>` : ''}${extraLabel ? `<div class="pLabel" style="color:${extraLabel.color}">${esc(extraLabel.text)}</div>` : ''}
+      <div class="pCard"><div class="pcName"><span style="color:${p.color}">●</span> ${esc(p.name)} <span class="pCry">💎${p.crystals}</span></div>
+      <div class="pcRole">${r ? `${r.icon} <b>${esc(r.name)}</b> <small>(${cardState})</small><div class="pDesc">${esc(r.desc)}</div>` : '🂠 Role: hidden — card not revealed yet'}</div>
+      <div class="pcFac">${this.factionLine(p, st)}</div>
+      ${stat.length || held ? `<div class="pcStat">${stat.join(' • ')}${held ? `${stat.length ? ' • ' : ''}✋ ${esc(held)}` : ''}</div>` : ''}</div>`;
   }
 
   // ------------------------------------------------------------------ modals
@@ -391,6 +453,6 @@ export class UI {
 
 function cerTitle(st) {
   const c = st.cer;
-  return ({ ANNOUNCE: 'Assembling', NOMINATE: 'Nomination', VOTE: 'Loyalty check', COUNT: 'Counting', REACTION: 'Reaction time', EXECUTION: 'Execution', CURSE: 'Curse', EVENT: MILESTONE_EVENTS[c.mode]?.name || 'Milestone event', DEBATE: 'Debate — New Hazard in' })[c.sub] || '';
+  return ({ ANNOUNCE: 'Assembling', NOMINATE: 'Nomination', VOTE: 'Loyalty check', COUNT: 'Counting', REACTION: 'Reaction time', EXECUTION: 'Execution', CURSE: 'Curse', EVENT: MILESTONE_EVENTS[c.mode]?.name || 'Milestone event', DEBATE: 'Debate — New Hazard in', RESULT: 'Outcome' })[c.sub] || '';
 }
 export { ROLES };

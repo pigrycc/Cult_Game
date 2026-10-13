@@ -2,7 +2,7 @@
 //  DEVELOPER DEBUG SUITE — server-side command handlers (host-authorised).
 //  The client overlay (F1) sends {t:'debug', cmd, a:{...}}.
 // ============================================================================
-import { PHASE, CER, FACTIONS, ROLE_BY_ID, CURSES, MILESTONE_EVENTS } from '../shared/constants.js';
+import { PHASE, CER, FACTIONS, ROLE_BY_ID, CURSES, MILESTONE_EVENTS, DEFAULT_TIMERS } from '../shared/constants.js';
 import { TASKS } from '../shared/tasks.js';
 
 export class Debug {
@@ -91,6 +91,25 @@ export class Debug {
         }
         return ok(`${a.effect} → ${target.name}`);
       }
+      // ---- 7. Timers (all phase durations & countdowns)
+      case 'set_timers': {
+        const changed = [];
+        for (const [k, v] of Object.entries(a.timers || {})) {
+          if (!(k in DEFAULT_TIMERS) || v === '' || v == null || !isFinite(+v)) continue;
+          const val = Math.max(0, Math.min(600, +v));
+          if (k === 'revealBack' || k === 'revealFront') { if (val < 0.5) continue; }
+          if (m.timers[k] !== val) { m.timers[k] = val; changed.push(`${k}=${val}`); }
+        }
+        if ('workSec' in a) m.dbg.workSec = a.workSec === '' || a.workSec == null ? null : Math.max(5, Math.min(600, +a.workSec));
+        if ('holdMul' in a && isFinite(+a.holdMul)) m.dbg.holdMul = Math.max(0.05, Math.min(10, +a.holdMul));
+        if ('debateSec' in a) m.dbg.debateSec = a.debateSec === '' || a.debateSec == null ? null : Math.max(1, +a.debateSec);
+        // apply to a running countdown if requested
+        if (a.applyNow && m.phase === PHASE.CEREMONY && m.cer.sub === CER.VOTE && 'vote' in (a.timers || {})) m.cer.t = Math.min(m.cer.t, m.timers.vote);
+        return ok(`Timers updated ${changed.join(' ')} • work=${m.dbg.workSec ?? 'table'}s • hold×${m.dbg.holdMul} • debate=${m.dbg.debateSec ?? 'table'}`);
+      }
+      case 'reset_timers': m.timers = { ...DEFAULT_TIMERS }; m.dbg.workSec = null; m.dbg.holdMul = 1; m.dbg.debateSec = null; return ok('All timers reset to defaults');
+      case 'extended_curses': m.dbg.extendedCurses = !!a.on; return ok(`Extended curses (Call of the Abyss, Dark Initiation) in random pool: ${a.on ? 'ON' : 'OFF'}`);
+      case 'teleport': if (target && isFinite(+a.x) && isFinite(+a.z)) { Object.assign(target.body, { x: +a.x, y: 0, z: +a.z, vx: 0, vy: 0, vz: 0 }); m.send(target.id, { t: 'teleport', x: +a.x, z: +a.z, yaw: target.body.yaw }); ok(`${target.name} teleported (keeps held tool)`); } return;
       case 'allow_debug_all': if (p.id === m.hostId) { m.dbg.debugAll = !!a.on; ok(`Debug for everyone: ${a.on}`); } return;
       default: return ok('Unknown debug command ' + cmd);
     }
@@ -102,6 +121,7 @@ export class Debug {
       freezeRed: d.freezeRed, redX: d.redX, redT: d.redT, yellowMul: d.yellowMul, debateSec: d.debateSec, debateInfinite: d.debateInfinite,
       maxConcurrent: d.maxConcurrent, mutinyThreshold: d.mutinyThreshold, forcedEvent: d.forcedEvent, botMode: d.botMode,
       timeScale: this.m.timeScale, debugAll: d.debugAll, forcedNpcs: d.forcedNpcs,
+      timers: this.m.timers, workSec: d.workSec, holdMul: d.holdMul, extendedCurses: d.extendedCurses, workDefault: this.m.balance.work, debateDefault: this.m.balance.debate,
     };
   }
 }

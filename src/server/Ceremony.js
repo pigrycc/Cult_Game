@@ -23,6 +23,7 @@ export class Ceremony {
     this.sub = null; this.t = 0; this.mode = null; this.milestone = 0; this.eventKey = null;
     this.resetRebellion();
     this.reveal = []; this.result = null; this.presidingMaster = null; this.chaosSacrificed = false; this.lastSacrifice = null;
+    this.summary = null; this.after = null;
   }
 
   resetRebellion() {
@@ -44,10 +45,33 @@ export class Ceremony {
     this.eventKey = isFinal ? 'FINAL' : (m.dbg.forcedEvent || m.track[milestoneNum - 1] || 'EMPTY');
     this.chaosSacrificed = false; this.lastSacrifice = null;
     m.setPhase(PHASE.CEREMONY);
-    for (const p of m.list) { p.gagged = false; m.releaseHold(p); }
+    for (const p of m.list) { p.gagged = false; m.releaseHold(p, 'silent'); }
     m.bigAll('Well Done — Execution in 3 sec', `Milestone ${milestoneNum}/${m.bars.M} reached • The Red Bar is frozen`, 3, '#ffe28a');
     m.fx('milestone');
     this.setSub(CER.ANNOUNCE, m.timers.announce);
+  }
+
+  /**
+   * Phase-transition buffer: show an outcome summary card to everyone for
+   * timers.phaseTransitionBufferSeconds, then continue with `next`. 0 = skip (debug).
+   * summary = { icon, title, color, lines: [string] }
+   */
+  pause(summary, next) {
+    const b = +this.m.timers.phaseTransitionBufferSeconds || 0;
+    this.m.log(`${summary.icon || ''} ${summary.title}${summary.lines?.length ? ' — ' + summary.lines.join('; ') : ''}`);
+    if (b <= 0) { this.summary = null; return next(); }
+    this.summary = summary; this.after = next;
+    this.setSub(CER.RESULT, b, summary.kind || null);
+  }
+
+  crystalSnapshot() { return new Map(this.m.list.map(p => [p.id, p.crystals])); }
+  crystalDeltas(before) {
+    const out = [];
+    for (const p of this.m.list) {
+      const d = p.crystals - (before.get(p.id) ?? p.crystals);
+      if (d) out.push(`${p.name}: ${d > 0 ? '+' : ''}${d} 💎 (now ${p.crystals})`);
+    }
+    return out;
   }
 
   setSub(s, t, mode = null) {
@@ -126,6 +150,7 @@ export class Ceremony {
         } else this.startDebate();
         break;
       case CER.DEBATE: this.end(); break;
+      case CER.RESULT: { const fn = this.after; this.after = null; this.summary = null; if (fn) fn(); break; }
       default: break;
     }
   }
@@ -218,8 +243,14 @@ export class Ceremony {
     this.result = { total, threshold: th, success };
     if (!success) {
       m.bigAll(total > 0 ? 'The Rebellion Fails' : 'The Crew Agrees', `${total}/${th} crystals — crystals return to their owners. ${this.E?.name} will execute.`, 3, '#c0c0c0');
-      m.log(`Rebellion failed (${total}/${th}).`);
-      return this.startExecution();
+      const rebelsF = this.rebels();
+      return this.pause({
+        icon: total > 0 ? '🛡️' : '🤝', color: '#d0d0d0', title: total > 0 ? `Rebellion fails (${total}/${th} 💎)` : `The crew agrees (0/${th} 💎)`,
+        lines: [
+          ...(rebelsF.length ? [`Rebels: ${rebelsF.map(r => `${r.name} (${this.final.get(r.id)})`).join(', ')} — crystals returned`] : ['Nobody played a crystal']),
+          `${this.M?.name} stays Master • ${this.E?.name} will execute`,
+        ],
+      }, () => this.startExecution());
     }
     const rebels = this.rebels();
     const oldMaster = this.M;
@@ -234,6 +265,7 @@ export class Ceremony {
       if (r.roleId === 3 && r.roleRevealed) m.addCrystals(r, 1);   // Rune Master recovers 1
       if (this.machi === r.id && r.id !== newMaster.id) { m.addCrystals(r, v); m.toast(r.id, '🎭 Machiavellian: your crystals return to your pouch.'); }
     }
+    const lossLines = rebels.map(r => `${r.name}: −${this.final.get(r.id)} 💎 played (now ${r.crystals})`);
     m.masterId = newMaster.id; newMaster.servedMaster++;
     m.execId = null;
     m.fx('rebellion');
@@ -242,7 +274,10 @@ export class Ceremony {
     // Swap places: old master into the circle, new master to the centre
     if (oldMaster) m.teleport(oldMaster, newMaster.body.x, newMaster.body.z, newMaster.body.yaw);
     m.teleport(newMaster, MASTER_SPOT.x, MASTER_SPOT.z, 0);
-    this.startNomination();
+    this.pause({
+      icon: '⚔️', color: '#ff6b6b', title: `Rebellion succeeds (${total}/${th} 💎)`,
+      lines: [`${oldMaster?.name ?? '?'} is overthrown — ${newMaster.name} seizes the staff`, ...lossLines, 'The old duo is spared exhaustion • a new nomination follows'],
+    }, () => this.startNomination());
   }
 
   // --------------------------------------------------------------- role hooks
@@ -257,7 +292,7 @@ export class Ceremony {
     if (old) m.teleport(old, nm.body.x, nm.body.z, nm.body.yaw);
     m.teleport(nm, MASTER_SPOT.x, MASTER_SPOT.z, 0);
     m.bigAll(`${nm.name} takes the staff!`, byChef ? '🍲 The Old Chef dethroned the Master — a new nomination begins.' : '', 3, '#ffd75e');
-    this.startNomination();
+    this.pause({ icon: '🍲', color: '#ffd75e', title: 'The Master is dethroned', lines: [`${old?.name ?? '?'} loses the staff without a rebellion`, `${nm.name} (fewest turns as Master) nominates a new Executioner`] }, () => this.startNomination());
   }
 
   fanaticalOffer(caster, target) {
@@ -303,19 +338,36 @@ export class Ceremony {
     m.fx('portal_burst', { faction: n.faction });
     const C = CURSES[n.curse];
     m.bigAll(`${FACTION_INFO[n.faction].icon} A ${FACTION_INFO[n.faction].short} captive is devoured!`, `Stigma: ${C.name} — ${C.desc}`, 3.5, FACTION_INFO[n.faction].color);
-    m.log(`${this.E?.name} sacrificed a ${n.faction} captive (${C.name}).`);
-    this.resolveCurse(n.curse);
+    const before = this.crystalSnapshot();
+    const effect = this.applyCurse(n.curse);
+    const deltas = this.crystalDeltas(before);
+    const F = FACTION_INFO[n.faction];
+    this.pause({
+      icon: F.icon, color: F.color, kind: 'sacrifice', glyph: { faction: n.faction, curse: n.curse },
+      title: `${this.E?.name ?? 'The Executioner'} fed a ${F.short} captive to the portal`,
+      lines: [`Curse triggered: ${C.name} — ${C.desc}`, ...effect, ...(deltas.length ? deltas : ['No Mana Crystals changed hands']),
+        `Altar: 🔥 ${m.tally.fire} • 🩸 ${m.tally.blood} • 🔮 ${m.tally.chaos}`],
+    }, () => this.startInteractiveCurse(n.curse));
   }
 
-  resolveCurse(curse) {
+  /** Immediate (non-interactive) curse effects. Returns summary lines. */
+  applyCurse(curse) {
+    const m = this.m, e = this.E;
+    switch (curse) {
+      case 'MANA_BOOST': if (e) { m.addCrystals(e, 1); m.toast(e.id, '+1 Mana Crystal!'); } return [];
+      case 'MANA_DRAIN': if (e) { m.addCrystals(e, -1); m.toast(e.id, '-1 Mana Crystal (drained).', 'warn'); } return [];
+      case 'GAGGING_SEAL': if (e) { e.gagged = true; m.toastAll(`🔇 ${e.name} is gagged until the next ceremony.`); return [`🔇 ${e.name} is gagged until the next ceremony`]; } return [];
+      case 'TOXIC_FUMES': return this.toxicFumes();
+      default: return [];
+    }
+  }
+
+  /** Interactive curses (strike a target) — otherwise straight to the milestone event. */
+  startInteractiveCurse(curse) {
     const m = this.m, e = this.E, mm = this.M;
     switch (curse) {
-      case 'MANA_BOOST': if (e) { m.addCrystals(e, 1); m.toast(e.id, '+1 Mana Crystal!'); } break;
-      case 'MANA_DRAIN': if (e) { m.addCrystals(e, -1); m.toast(e.id, '-1 Mana Crystal (drained).', 'warn'); } break;
-      case 'GAGGING_SEAL': if (e) { e.gagged = true; m.toastAll(`🔇 ${e.name} is gagged until the next ceremony.`); } break;
-      case 'TOXIC_FUMES': this.toxicFumes(); break;
       case 'EYE_OF_TRUTH':
-        if (e) { this.setSub(CER.CURSE, m.timers.eye, 'eye'); m.big(e.id, '👁️ Eye of Truth', 'Strike one minion (LMB) to learn their cult — 5 seconds!', 3, '#7fe0ff'); return; }
+        if (e) { this.setSub(CER.CURSE, m.timers.eye, 'eye'); m.big(e.id, '👁️ Insight Eye', 'Strike one minion (LMB) to learn their cult!', 3, '#7fe0ff'); return; }
         break;
       case 'CALL_OF_ABYSS':
         if (mm) { this.setSub(CER.CURSE, m.timers.abyss, 'abyss'); m.bigAll('🗝️ Call of the Abyss', `${mm.name} hands the Prison key to one minion (LMB)`, 3, '#7fe0ff'); return; }
@@ -332,13 +384,13 @@ export class Ceremony {
       }
       default: break;
     }
-    this.setSub(CER.CURSE, 2.5, 'banner');
+    this.startEvent();
   }
 
   toxicFumes() {
     const m = this.m, old = this.M, e = this.E;
     m.fx('fumes', { id: old?.id });
-    if (!old) return;
+    if (!old) return [];
     const cands = m.living.filter(p => p.id !== old.id && p.id !== m.execId && !p.muted);
     const least = Math.min(...cands.map(p => p.servedMaster));
     const nm = pick(cands.filter(p => p.servedMaster === least));
@@ -347,6 +399,7 @@ export class Ceremony {
     for (const p of [old, e]) if (p) { p.fumesT = m.timers.fumes; m.ragdoll(p, 1.6, 2.5); }
     if (nm) { m.masterId = nm.id; nm.servedMaster++; }
     m.bigAll('☠️ TOXIC FUMES!', `${old.name} chokes and loses the staff${nm ? ' → ' + nm.name + ' (least service) is the new Master' : ''}. Both deciders are intoxicated.`, 4, '#7dff7d');
+    return [`☠️ ${old.name} loses the staff${nm ? ' → ' + nm.name + ' (least service) is the new Master' : ''} and is exhausted`, `🤢 ${old.name} and ${e?.name ?? '?'} are intoxicated (drunk, garbled voice)`];
   }
 
   slapCandidates(byId) { return this.m.living.filter(p => p.id !== byId); }
@@ -357,14 +410,14 @@ export class Ceremony {
     e.known.set(t.id, t.faction);
     this.m.send(e.id, { t: 'label', id: t.id, text: `${FACTION_INFO[t.faction].icon} ${FACTION_INFO[t.faction].name}`, color: FACTION_INFO[t.faction].color, dur: 3 });
     this.m.fx('slap', { x: t.body.x, z: t.body.z });
-    this.setSub(CER.CURSE, 2.5, 'banner');
+    this.pause({ icon: '👁️', color: '#7fe0ff', title: 'The Insight Eye closes', lines: [`${e.name} privately learned one minion's cult.`] }, () => this.startEvent());
   }
   giveKey(t) {
     t.hasKey = true;
     this.m.toastAll(`🗝️ ${t.name} received the Prison key.`);
     this.m.toast(t.id, 'You hold the Prison key: the bars of the Prison of the Rejected open for you. Inspect the rejected captives there.');
     this.m.fx('slap', { x: t.body.x, z: t.body.z });
-    this.setSub(CER.CURSE, 2, 'banner');
+    this.pause({ icon: '🗝️', color: '#7fe0ff', title: 'Call of the Abyss', lines: [`${t.name} now holds the Prison key and may inspect the rejected captives.`] }, () => this.startEvent());
   }
   convert(t) {
     const m = this.m, L = m.P(m.chaosLeaderId);
@@ -374,8 +427,7 @@ export class Ceremony {
     for (const a of chaos) for (const b of chaos) if (a !== b) a.known.set(b.id, FACTIONS.CHAOS);
     m.send(t.id, { t: 'converted', leader: L.name });
     m.send(L.id, { t: 'label', id: t.id, text: '🔮 Converted!', color: '#b06bff', dur: 3 });
-    m.log('A dark initiation took place...');
-    this.setSub(CER.CURSE, 2, 'banner');
+    this.pause({ icon: '🔮', color: '#b06bff', title: 'The darkness recedes…', lines: ['Something has changed in the circle. Nobody saw what.'] }, () => this.startEvent());
   }
 
   // --------------------------------------------------------------- milestone events
@@ -394,11 +446,13 @@ export class Ceremony {
         this.setSub(CER.EVENT, m.timers.flogging, key);
         m.bigAll('⛓️ Flogging', `${mm?.name} takes the whip — the flogged minion publicly reveals one cult they are NOT.`, 4, '#ffd75e');
         break;
-      case 'RENEWAL':
+      case 'RENEWAL': {
+        const before = this.crystalSnapshot();
         for (const p of m.living) if (p.crystals < 3) p.crystals = 3;
         m.bigAll('💎 Mana Renewal', 'Everyone with fewer than 3 Mana Crystals refills to 3.', 3, '#7fe0ff');
-        this.setSub(CER.EVENT, m.timers.eventBanner, 'banner');
-        break;
+        const d = this.crystalDeltas(before);
+        return this.pause({ icon: '💎', color: '#7fe0ff', kind: 'event', title: 'Mana Renewal', lines: d.length ? d : ['Everyone already had 3 or more crystals'] }, () => this.startDebate());
+      }
       case 'LIVING':
         this.setSub(CER.EVENT, m.timers.living, key);
         m.big(mm?.id, '🐙 Living Sacrifice Ritual', 'Chase a minion, LMB to lift them, LMB at the portal to throw them in. If it is the Chaos Leader — Chaos wins!', 4, '#ff6b6b');
@@ -406,29 +460,31 @@ export class Ceremony {
         break;
       case 'FINAL': return this.finalize();
       default:
-        m.bigAll(`${ev?.icon ?? '⚪'} ${ev?.name ?? 'Empty'} milestone`, 'No special event.', 2, '#ddd');
-        this.setSub(CER.EVENT, 2, 'banner');
+        this.pause({ icon: ev?.icon ?? '⚪', color: '#dddddd', kind: 'event', title: `${ev?.name ?? 'Empty'} milestone`, lines: ['No special event — the debate begins.'] }, () => this.startDebate());
     }
   }
 
   eventSlap(t) {
     const m = this.m, mm = this.M;
     m.fx('slap', { x: t.body.x, z: t.body.z, whip: this.mode === 'FLOGGING' });
+    let sum;
     if (this.mode === 'INSPECTION') {
       mm.known.set(t.id, t.faction); t.immuneChaos = true;
       m.send(mm.id, { t: 'label', id: t.id, text: `${FACTION_INFO[t.faction].icon} ${FACTION_INFO[t.faction].name}`, color: FACTION_INFO[t.faction].color, dur: 3 });
       m.toastAll(`🔍 ${mm.name} inspected ${t.name}'s robe.`);
+      sum = { icon: '🔍', title: 'Robe Inspection', lines: [`${mm.name} searched ${t.name}'s robe — the result is known only to the Master.`, `${t.name} is now immune to Chaos.`] };
     } else if (this.mode === 'MUTENESS') {
       t.muted = true; t.mutedSince = m.ceremonyIndex;
       m.toastAll(`🤐 ${t.name} is cursed with muteness.`);
+      sum = { icon: '🤐', title: 'Curse of Muteness', lines: [`${t.name} cannot speak until the next sacrifice`, `${t.name} cannot be nominated Master/Executioner during the next sacrifice`] };
     } else if (this.mode === 'FLOGGING') {
       const not = pick(Object.values(FACTIONS).filter(f => f !== t.faction));
       t.publicNot = not; t.immuneChaos = true;
       for (const p of m.list) m.send(p.id, { t: 'label', id: t.id, text: `I'm not ${FACTION_INFO[not].name}!`, color: '#fff', dur: 4 });
       m.toastAll(`⛓️ ${t.name} is NOT ${FACTION_INFO[not].name}.`);
-      m.log(`${t.name} was flogged: NOT ${not}.`);
+      sum = { icon: '⛓️', title: 'Flogging', lines: [`${t.name} is NOT ${FACTION_INFO[not].name} (public evidence)`, `${t.name} is now immune to Chaos.`] };
     }
-    this.setSub(CER.EVENT, 2.5, 'banner');
+    this.pause({ color: '#ffd75e', kind: 'event', ...sum }, () => this.startDebate());
   }
 
   liftLiving(mm, v) {
@@ -453,8 +509,7 @@ export class Ceremony {
     if (m.exhaustedQueue.includes(v.id)) { m.exhaustedQueue = m.exhaustedQueue.filter(id => id !== v.id); m.refreshExhausted(); }
     m.teleport(v, 0, 8.5, 0);
     m.bigAll(`👻 ${v.name} was sacrificed alive`, 'They return as a ghost: they may still work, but can hold no office.', 3.5, '#bbb');
-    m.log(`${v.name} became a ghost.`);
-    this.setSub(CER.EVENT, 2.5, 'banner');
+    this.pause({ icon: '👻', color: '#bbbbbb', kind: 'event', title: 'Living Sacrifice', lines: [`${mm?.name ?? 'The Master'} threw ${v.name} into the portal — they were NOT the Chaos Leader.`, `${v.name} returns as a ghost: may work, cannot hold office.`] }, () => this.startDebate());
   }
 
   finalize() {
@@ -533,6 +588,7 @@ export class Ceremony {
       threshold: this.threshold, total: showAmounts ? this.total() : null, result: this.result,
       sealed: [...this.sealed], provoked: [...this.provoked], anarchy: this.anarchy, tribune: this.tribune,
       lastSacrifice: this.lastSacrifice, chaosSacrificed: this.chaosSacrificed,
+      summary: this.sub === CER.RESULT ? this.summary : null,
     };
   }
 }
