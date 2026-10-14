@@ -106,7 +106,7 @@ export class Game {
     document.addEventListener('mousedown', e => { if (this.locked && e.button === 0) this.lmb(); });
     window.addEventListener('keydown', e => {
       if (this.ui.chatOpen) return;
-      if (e.code === 'F1') { e.preventDefault(); if (this.debug) { const o = this.debug.toggle(); if (o) document.exitPointerLock(); } return; }
+      if (e.code === 'F1' || e.code === 'Backquote') { e.preventDefault(); if (this.debug) { const o = this.debug.toggle(); if (o) document.exitPointerLock(); } return; }
       if (e.code === 'Tab') { e.preventDefault(); this.ui.scoreboard(true, this.st); return; }
       if (this.ui.modalOpen) { if (e.code === 'Escape') this.ui.closeModal(); return; }
       if (e.repeat) return;

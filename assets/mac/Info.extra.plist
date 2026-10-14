@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Crypt of Minions uses the microphone for in-game proximity voice chat. Audio is only sent while you hold the push-to-talk key (V).</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Crypt of Minions connects to other players on your local network to host and join games.</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
