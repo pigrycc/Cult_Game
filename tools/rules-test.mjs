@@ -2,6 +2,7 @@
 import { Match } from '../src/server/Match.js';
 import { PHASE, CER, ROLE_BY_ID, ROLES, roleCard, FACTION_OBJECTIVE } from '../src/shared/constants.js';
 import { BOT_NAMES } from '../src/server/Bots.js';
+import { Countdown, countdownSources } from '../src/client/countdown.js';
 
 let fails = 0;
 const ok = (c, msg) => { if (!c) { fails++; console.log('FAIL', msg); } else console.log('ok  ', msg); };
@@ -155,5 +156,98 @@ ok(['fire', 'blood', 'chaos'].every(f => FACTION_OBJECTIVE[f]), 'faction objecti
 { const { m, P } = mk(); m.dbg.noSprint = true; const p = P(0); Object.assign(p.body, { x: 0, z: 0, vx: 0, vz: 0, ragdoll: 0 }); p.frozen = false;
   for (let i = 0; i < 30; i++) m.simulate(p, { fwd: 1, strafe: 0, yaw: 0, pitch: 0, sprint: true }, 1 / 60);
   ok(Math.hypot(p.body.vx, p.body.vz) < 4.5, 'disable sprint caps speed at walking pace'); }
+// --- lobby cleanup: no debuff survives the trip back to the lobby
+{ const { m } = mk(7); const [a, b, c] = m.list;
+  // pile on everything
+  a.fumesT = 40; a.muted = true; a.mutedSince = 3; a.gagged = true; a.immuneChaos = true; a.hasKey = true; a.ghost = true; a.cardUsed = true; a.roleRevealed = true;
+  a.crystals = 0; a.gold = 33; a.blind = true; a.frozen = true; a.shoveCd = 3; a.shoveImmuneUntil = 99; a.lastShovedBy = b.id; a.publicNot = 'fire'; a.slipCd = 2; a.servedMaster = 4;
+  b.ridingOn = c.id; c.rider = b.id; b.body.ragdoll = 2; b.body.vx = 5; c.exhausted = true; m.exhaustedQueue = [c.id];
+  b.heldItem = m.tasks.makeItem('sandbag', 0, 0.5, 0).id; b.body.spin = 9; c.fumesT = 12;
+  m.tally = { fire: 3, blood: 1, chaos: 2 }; m.winner = 'fire';
+  m.endMatch('fire', 'test'); m.returnToLobby(m.hostId);
+  const neutral = p => !p.fumesT && !p.muted && !p.gagged && !p.immuneChaos && !p.hasKey && !p.ghost && !p.cardUsed && !p.roleRevealed &&
+    p.crystals === 3 && p.gold === 0 && !p.blind && !p.frozen && !p.shoveCd && !p.shoveImmuneUntil && p.lastShovedBy === null && !p.publicNot &&
+    !p.slipCd && !p.servedMaster && !p.exhausted && !p.ridingOn && !p.rider && !p.carriedBy && !p.heldItem && !p.heldTool && !p.hold &&
+    p.body.ragdoll === 0 && p.body.vx === 0 && p.body.spin === 0 && p.faction === null && p.roleId === null && p.known.size === 0 && p.knownNpcs.size === 0;
+  ok(m.phase === PHASE.LOBBY && m.list.every(neutral), 'every status effect / debuff / overlay flag is purged in the lobby');
+  ok(m.list.every(p => m.speedMul(p) === 1), 'speed modifiers back to 1.0');
+  ok(m.exhaustedQueue.length === 0 && m.tally.fire === 0 && m.winner === null && m.masterId === null && m.items === undefined, 'match-level state reset');
+  const st = Object.values(m.list).map(p => ({ fumes: p.fumesT, blind: p.blind })); ok(st.every(x => x.fumes === 0 && !x.blind), 'state packet shows no fumes / blind');
+  // and a fresh match starts clean as well
+  m.list.forEach(p => { p.fumesT = 30; p.muted = true; }); m.startGame(m.hostId);
+  ok(m.list.every(p => p.fumesT === 0 && !p.muted), 'a new match also starts without leftover debuffs'); }
+{ const m = new Match({ send: () => {} }); const ids = []; for (let i = 0; i < 6; i++) ids.push(m.addPlayer({ name: 'P' + i, isHost: i === 0 }).id);
+  m.startGame(ids[0]); m.phaseT = 0; m.tick(0.016); m.removePlayer(ids[3]); m.endMatch('fire', 't'); m.returnToLobby(m.hostId);
+  ok(m.players.size === 5 && !m.P(ids[3]), 'players who disconnected mid-match are not carried into the next lobby'); }
+// --- mutiny tie-break uses the modified (effective) crystal count
+function mutiny(votes, setup) {
+  const { m } = mk(8); toVote(m); const ex = m.eligibleExec()[0]; m.cer.nominate(ex.id);
+  const v = m.list.filter(p => m.cer.isVoter(p)); m.dbg.mutinyThreshold = 1;
+  votes.forEach((n, i) => m.cer.vote(v[i], n));
+  step(m, 0.1, 8); m.cer.t = 0; step(m); // count
+  if (setup) setup(m, v);
+  m.cer.t = 0; step(m); m.cer.t = 0; step(m);
+  return { m, v };
+}
+{ // raw tie (1 vs 1 vs 1) – A is doubled by the Rebellion Instigator → A must win every time
+  let wins = 0; for (let i = 0; i < 12; i++) { const { m, v } = mutiny([1, 1, 1], (m, v) => m.cer.doubled.add(v[0].id)); if (m.masterId === v[0].id) wins++; }
+  ok(wins === 12, 'raw tie + doubling → doubled player always becomes Master (12/12)'); }
+{ // 2 raw (not doubled) vs 1 raw doubled → effective 2 vs 2 → either may win, nobody else
+  const seen = new Set(); for (let i = 0; i < 40; i++) { const { m, v } = mutiny([2, 1, 0], (m, v) => m.cer.doubled.add(v[1].id)); seen.add(m.masterId === v[0].id ? 'A' : m.masterId === v[1].id ? 'B' : 'other'); }
+  ok(seen.has('A') && seen.has('B') && !seen.has('other'), 'effective tie (2 vs 1×2) is settled by lot between exactly those two'); }
+{ // 3 raw vs 2 raw doubled (=4) → the doubled player wins even though the raw count is lower
+  let wins = 0; for (let i = 0; i < 12; i++) { const { m, v } = mutiny([3, 2, 0], (m, v) => m.cer.doubled.add(v[1].id)); if (m.masterId === v[1].id) wins++; }
+  ok(wins === 12, 'highest MODIFIED total wins even with a lower raw count (2×2=4 beats 3)'); }
+{ // pacified rebel counts for nothing → cannot take the staff
+  let bad = 0; for (let i = 0; i < 12; i++) { const { m, v } = mutiny([3, 1, 0], (m, v) => m.cer.pacified.add(v[0].id)); if (m.masterId === v[0].id) bad++; }
+  ok(bad === 0, 'pacified rebel (0 effective) never becomes Master'); }
+{ const { m, v } = mutiny([1, 1, 0], (m, v) => m.cer.doubled.add(v[0].id)); ok(m.cer.summary && /counts as 2/.test(m.cer.summary.lines.join(' ')), 'outcome card shows the doubled value'); }
+// --- countdown audio: last 5 seconds, escalating 5 → 0
+function playCountdown({ total, rate = 1, packetHz = 10, fps = 60, mutate = null, extra = 0 }) {
+  const ticks = []; let now = 0; const cd = new Countdown(n => ticks.push([+(now / 1000).toFixed(2), n]));
+  let simLeft = total, nextPacket = 0, srv = 0;
+  for (let step = 0; now <= (total / rate + 1.5 + extra) * 1000; step++) {
+    now = step * (1000 / fps);
+    if (now >= nextPacket) { if (mutate) { const r = mutate(now / 1000, simLeft); if (r !== undefined) simLeft = r; } cd.sample('w', Math.max(0, +simLeft.toFixed(1)), now, rate, +srv.toFixed(2)); nextPacket += 1000 / packetHz; }
+    cd.update(now);
+    simLeft -= (rate / fps); srv += rate / fps;
+  }
+  return ticks;
+}
+{ const t = playCountdown({ total: 8 });
+  ok(t.map(x => x[1]).join() === '5,4,3,2,1,0', 'countdown ticks 5,4,3,2,1 then the final 0 (once each)');
+  ok(t.every(([at, n]) => Math.abs(at - (8 - n)) < 0.12), 'ticks land on the second boundaries (±0.1 s)'); }
+{ const t = playCountdown({ total: 5 }); ok(t.map(x => x[1]).join() === '5,4,3,2,1,0', 'a 5 s window (reaction) ticks the whole way'); }
+{ const t = playCountdown({ total: 40, rate: 8 }); ok(t.map(x => x[1]).join() === '5,4,3,2,1,0' && Math.abs(t[0][0] - 35 / 8) < 0.15, 'honours the host time scale (×8)'); }
+{ const t = playCountdown({ total: 12, mutate: (sec, left) => (sec > 3 && left > 1 ? 0.5 : undefined) });
+  ok(t.length === 0, 'a window cut short (everyone voted) plays no ticks and no time-up tone'); }
+{ const t = playCountdown({ total: 4, extra: 10, mutate: (sec, left) => (sec > 1 && sec < 1.15 ? 9 : undefined) });
+  ok(t.map(x => x[1]).join().endsWith('5,4,3,2,1,0'), 'a window the host extends restarts the 5…0 cue'); }
+{ // renderer stalls: frames/packets handled in bursts ~every 0.9 s – every second must still be announced and the time-up tone must still play
+  const ticks = []; let now = 0; const cd = new Countdown(n => ticks.push(n)); let srv = 0;
+  for (let batch = 0; batch < 12; batch++) {
+    now += 900;                                   // the main thread was blocked for 0.9 s
+    for (let k = 9; k >= 0; k--) { const s = srv + (9 - k) * 0.1; const left = 8 - s; if (left >= 0) cd.sample('w', +left.toFixed(1), now, 1, +s.toFixed(2)); }
+    srv += 0.9; cd.update(now);
+  }
+  const have = new Set(ticks);
+  ok(have.has(0) && ticks.every((n, i) => !i || n < ticks[i - 1]) && ticks.length >= 4, `stalled client (0.9 s hitches) still plays the cue in order and ends with time-up (${ticks.join(',')})`); }
+{ // next window starts before the local clock reaches 0 → the finished window must still play its time-up tone
+  const ticks = []; const cd = new Countdown(n => ticks.push(n));
+  cd.sample('a', 3, 0, 1, 0); for (let ms = 0; ms <= 2950; ms += 50) cd.update(ms);
+  cd.sample('b', 6, 2950, 1, 2.95); ok(ticks.join() === '3,2,1,0', `time-up tone is not lost when the next window arrives first (${ticks.join()})`); }
+{ const ticks = []; const cd = new Countdown(n => ticks.push(n)); cd.sample(null, null, 0); cd.update(100); ok(ticks.length === 0, 'no countdown while nothing is timed (infinite debate / frozen)'); }
+{ const SUBS = new Set([CER.VOTE, CER.DEBATE]); const base = { phase: 'STATE_CEREMONY', you: { id: 1 }, spy: {}, bars: {} };
+  ok(countdownSources({ ...base, cer: { sub: CER.VOTE, seq: 7, t: 4, infinite: false } }, SUBS).window?.key === 'cer:7', 'vote window is a countdown source');
+  ok(countdownSources({ ...base, cer: { sub: CER.DEBATE, seq: 8, t: 4, infinite: true } }, SUBS).window === null, 'infinite debate is not');
+  ok(countdownSources({ ...base, cer: { sub: CER.RESULT, seq: 9, t: 2 } }, SUBS).window === null, 'outcome-card pauses are not'); }
+// --- work-phase collapse countdown (Red Bar → next milestone)
+{ const { m } = mk(7);
+  for (const warm of [0, 0.7, 13.37]) {
+    const { m: mm } = mk(7); for (let i = 0; i < Math.round(warm / 0.01); i++) mm.tick(0.01);
+    const eta = mm.bars.collapseEta(); let t = 0; while (mm.phase === PHASE.WORK && t < 120) { mm.tick(0.01); t += 0.01; }
+    ok(mm.phase === PHASE.FINALE && Math.abs(t - eta) < 0.05, `collapse ETA predicts the explosion (predicted ${eta.toFixed(2)}s, took ${t.toFixed(2)}s)`);
+  }
+  m.dbg.freezeRed = true; ok(m.bars.collapseEta() === null && m.bars.serialize().eta === null, 'no ETA while the Red Bar is frozen'); }
 console.log(fails ? `\n${fails} FAILED` : '\nALL RULE TESTS PASSED');
 process.exit(fails ? 1 : 0);

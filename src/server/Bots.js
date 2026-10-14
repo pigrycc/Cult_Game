@@ -13,7 +13,7 @@
 //              its own cult and fires its role card when it helps its faction
 // ============================================================================
 import { PHASE, CER, FACTIONS, ROLE_BY_ID } from '../shared/constants.js';
-import { NAV_NODES, NAV_EDGES, PORTAL } from '../shared/map.js';
+import { NAV_NODES, NAV_EDGES, PORTAL, roomAt } from '../shared/map.js';
 import { wallsBetween } from '../shared/physics.js';
 import { pick, rand, dist2, weighted } from './util.js';
 
@@ -120,20 +120,8 @@ export class Bots {
   work(p, dt, input) {
     const m = this.m, B = p.brain, mode = m.dbg.botMode;
     p.botWorking = false;
-    // Master duty: fetch two captives
-    if (p.id === m.masterId && !p.ghost) {
-      if (p.carryingNpc) {
-        if (this.navTo(p, { x: 0, z: 5.2 }, dt, input) || dist2(p.body, PORTAL) < 6.5) m.npcs.lmbCarrying(p);
-        return;
-      }
-      const need = 2 - m.npcs.altar().length;
-      const ch = m.npcs.chamber();
-      if (need > 0 && ch.length && !m.npcs.spyActive) {
-        const n = mode === 'human' ? this.bestCaptive(p, ch) : ch[0];
-        if (this.navTo(p, { x: n.x, z: -21.4 }, dt, input) || dist2(p.body, n) < 2.2) m.npcs.lmb(p, n.id);
-        return;
-      }
-    }
+    // Master duty: fetch two captives (owns the bot's tick until both are on the altar)
+    if (p.id === m.masterId && !p.ghost && this.masterDuty(p, dt, input)) return;
     if (mode === 'human') this.tryAbility(p, dt);
     if (mode !== 'roamer' && mode !== 'human') return;
     if (B.state === 'pick') {
@@ -219,6 +207,52 @@ export class Bots {
         break;
       default: break;
     }
+  }
+
+  /**
+   * Master of Ceremonies, Work Phase: bring 2 captives from the Selection Chamber to the altar.
+   *   stage 'enter'   – walk into the chamber (this is what reveals the glyphs to the Master)
+   *   stage 'choose'  – pick ONE captive and keep it (sticky: re-picking every tick made the goal
+   *                     flip constantly, so the bot dithered on the spot instead of approaching)
+   *   stage 'approach'– walk up to it and lift it (LMB)
+   *   stage 'deliver' – carry it to the altar and set it down
+   * Returns true while the duty is active; false = nothing to do (or gave up), the bot may work.
+   */
+  masterDuty(p, dt, input) {
+    const m = this.m, B = p.brain, human = m.dbg.botMode === 'human';
+    const key = `${m.ceremonyIndex}:${m.masterId}`;
+    if (B.dutyKey !== key) { B.dutyKey = key; B.captive = null; B.dutyT = 0; B.grabFails = 0; B.gaveUp = false; }
+    if (B.gaveUp) return false;
+
+    if (p.carryingNpc) {                                       // deliver
+      B.captive = null;
+      if (this.navTo(p, { x: 0, z: 5.2 }, dt, input) || dist2(p.body, PORTAL) < 6.5) m.npcs.lmbCarrying(p);
+      return true;
+    }
+    const need = 2 - m.npcs.altar().length;
+    const ch = m.npcs.chamber();
+    if (need <= 0 || !ch.length || m.npcs.spyActive) { B.captive = null; return false; }
+
+    B.dutyT += dt;
+    if (B.dutyT > 45) { B.gaveUp = true; return false; }       // never loop forever: the crypt auto-picks at the ceremony
+    if (p.heldItem) m.tasks.dropItem(p);                       // lifting a captive needs free hands
+    B.state = 'pick'; B.task = null;                           // abandon any half-done chore
+
+    const inChamber = roomAt(p.body.x, p.body.z) === 'selection';
+    let n = B.captive != null ? ch.find(c => c.id === B.captive) : null;
+    if (!n && !inChamber) {                                    // enter
+      this.navTo(p, { x: 0, z: -19.4 }, dt, input);
+      return true;
+    }
+    if (!n) {                                                  // choose (once)
+      n = human ? this.bestCaptive(p, ch) : ch[0];
+      B.captive = n.id; B.grabFails = 0;
+    }
+    if (dist2(p.body, n) < 2.3) {                              // lift
+      input.yaw = Math.atan2(-(n.x - p.body.x), -(n.z - p.body.z));
+      if (!m.npcs.lmb(p, n.id) && ++B.grabFails > 12) { B.captive = null; B.grabFails = 0; }
+    } else this.navTo(p, { x: n.x, z: -21.4 }, dt, input);     // approach
+    return true;
   }
 
   // ================================================================ Humanlike reasoning

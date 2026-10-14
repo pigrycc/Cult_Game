@@ -68,6 +68,22 @@ export class Audio {
     }
   }
 
+  /**
+   * Escalating countdown cue for the last 5 seconds of a timed window.
+   * 5 → 1: a tick that gets higher and louder each second (double tick at 2, triple at 1, plus a
+   * low heartbeat under the last three). 0: deep "time's up" thud.
+   */
+  countdown(n) {
+    if (!this.ctx) return;
+    if (n <= 0) { this.tone(196, 0.55, 'sawtooth', 0.2, 0.45); this.tone(78, 0.8, 'sine', 0.34); return; }
+    const k = 5 - Math.min(5, n);                      // 0 … 4
+    const f = 520 + k * 140, v = 0.07 + k * 0.035;
+    this.tone(f, 0.07, 'square', v);
+    if (n <= 3) this.tone(66, 0.16, 'sine', 0.22 + (3 - n) * 0.06);
+    if (n <= 2) setTimeout(() => this.tone(f * 1.25, 0.06, 'square', v * 0.9), 130);
+    if (n <= 1) setTimeout(() => this.tone(f * 1.5, 0.06, 'square', v * 0.9), 260);
+  }
+
   // ---------------------------------------------------------------- voice
   async startMic() {
     if (this.mic) return true;

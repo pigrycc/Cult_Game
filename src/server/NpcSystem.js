@@ -61,7 +61,7 @@ export class NpcSystem {
 
   // ---------------------------------------------------------- roles
   startSpy(p) {
-    this.spyActive = true; this.spyId = p.id; this.spyT = this.m.timers.spyWindow; this.spyPeeked = null;
+    this.spyActive = true; this.spyId = p.id; this.spyT = this.m.timers.spyWindow; this.spyPeeked = null; this.spyN = (this.spyN || 0) + 1;
     this.m.toast(p.id, '🕳️ The grate opens for you for 15 s. E on a captive to peek, LMB on it to drop it through the trapdoor.');
     const m = this.m.P(this.m.masterId);
     if (m) this.m.toast(m.id, '🕳️ The Oubliette Spy is inside the Selection Chamber — the grate stays shut for you until they leave.', 'warn');

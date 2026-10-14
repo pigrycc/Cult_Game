@@ -60,6 +60,9 @@ To add a room: add a `rectRoom` (+ door gaps in the neighbour), a `ROOMS` entry,
 debate seconds, mutiny threshold, work-phase length and exhaustion count per player count;
 `MILESTONE_TRACKS` holds the 5/6/7 event tracks; `DEFAULT_TIMERS` every ceremony timer.
 
+## 4b. Automated checks
+`npm run test:rules` (103 rule assertions incl. lobby purge, effective-crystal tie-break, countdown logic, ETA accuracy) · `node tools/bot-master-test.mjs` (Master bots fetch two captives) · `npm run test:sim` (full bot match) · `tools/ui-smoke*.cjs` (headless-Chromium UI checks; need `PLAYWRIGHT_MODULE` and `CHROME_PATH`).
+
 ## 5. Testing checklist (solo, with the F1 console)
 1. Lobby → spawn 6 bots → START. Card back → flip → FPP.
 2. `Freeze Red Bar`, walk the wings, do tasks; co-op tasks with bots in **Idle** mode as partners for

@@ -17,6 +17,7 @@
 * The host runs the **same exe**; the server lives in the Electron main process, the host's own
   renderer connects to it over loopback with a random **host token** (grants START / debug).
 * `dist/server.cjs` is the same server as a headless dedicated host (`node server.cjs 7777`).
+* **Mutiny winner:** the new Master is the rebel with the highest *effective* contribution (crystals × Instigator doubling, Pacifier = 0); only an exact tie of effective totals is drawn by lot.
 * **Source of truth:** role/faction deal, NPC glyphs, crystals, bars, task validation, gates and
   ceremony resolution exist only on the host. `GameServer.stateFor(viewer)` builds a
   per-viewer packet: other players' factions, roles and NPC glyphs are only included when the
@@ -42,7 +43,7 @@
 | `STATE_REVEAL_SCREEN` | deal factions (table §7.1), unique roles 1–21, random Master | 5 s back + 5 s front |
 | `STATE_GAMEPLAY_WORK` | teleport, 3 captives seated, task pool filled, Red Bar running | Yellow hits milestone → CEREMONY · Red hits it first → FINALE (everyone loses) |
 | `STATE_CEREMONY` | Red frozen, barriers up | debate timer ends → WORK; FINAL milestone, Chaos-Leader living sacrifice, or mathematical sudden death (checked only after the Living Sacrifice outcome: Fire/Blood lead > every rival + remaining sacrifices) → FINALE |
-| `STATE_FINALE` | winner by altar majority, tie → Chaos | host → LOBBY |
+| `STATE_FINALE` | winner by altar majority, tie → Chaos | host → LOBBY (`Match.resetPlayerState` purges every status effect, overlay flag, carry/ride/shove state, card, crystals and private knowledge; players who left mid-match are dropped) |
 
 Ceremony sub-states: `ANNOUNCE (3 s) → NOMINATE → VOTE → COUNT → REACTION → RESULT → (success → NOMINATE again | fail → EXECUTION) → RESULT → CURSE → RESULT → EVENT → RESULT → DEBATE`.
 `RESULT` is the phase-transition buffer (`timers.phaseTransitionBufferSeconds`, default 3 s, 0 = skip): an outcome card (rebellion result, sacrifice + curse + crystal changes, milestone-event resolution) shown to everyone before the next step.
@@ -89,6 +90,10 @@ big.avatars [{name,color}]  ← coloured minion portraits on banners (2 = nomina
 Voice (binary): client → host = Int16 PCM, 16 kHz mono. Host → listener = `[speakerId u8][gain u8][flags u8][PCM]`;
 gain = proximity falloff (20 m) × 0.3^(walls between) or intercom pipe path, global (1.0) outside the Work Phase;
 muted / gagged speakers are dropped; flag 1 = Toxic Fumes (client garbles pitch + distortion), flag 2 = intercom (band-pass "tinny pipe").
+
+## 5b. Countdown audio (last 5 s)
+`client/countdown.js` turns the host's "seconds left" samples into one cue per second: 5 → 1 escalating ticks, 0 = time's-up thud (`Audio.countdown`). It is driven by its own 40 ms timer, interpolates between 10 Hz packets, and uses the host's sim clock (`state.time`, `state.ts`) to tell a real jump (vote closed early → silent, extended window → restarts) from client lag.
+Sources: every timed ceremony window (`cer.seq` identifies it: nomination, mutiny vote, reaction, execution, interactive curse/event, debate), the Oubliette Spy window, and the Work-Phase collapse clock `bars.eta` = seconds until the Red Bar reaches the next milestone (`ProgressBars.collapseEta`, accurate to the discrete tick phase). Infinite debate and frozen Red Bar have no countdown.
 
 ## 6. Fog-of-War rules (where enforced)
 * Faction icons: `stateFor` – `pact` only between dealt Blood cultists; `known` only from the viewer's private

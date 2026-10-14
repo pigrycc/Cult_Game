@@ -24,6 +24,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node tools/rules-test.mjs
+      - run: node tools/bot-master-test.mjs
       - run: node build.mjs --package
       - name: Attach zip to release
         env:
