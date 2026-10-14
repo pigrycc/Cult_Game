@@ -11,6 +11,10 @@ import { TOOLS, ITEM_TYPES, RUNES } from '../shared/tasks.js';
 import { buildWorld, updateTally } from './world.js';
 import { makeMinion, animateMinion, setCrystals, setMinionColor, setGhost, makeTool, makeItem, makeCoins, makeMarker, animatePortal, mat, mesh } from './models.js';
 import { FX } from './fx.js';
+import { Countdown, countdownSources } from './countdown.js';
+
+// ceremony sub-states with a visible decision timer (ANNOUNCE / COUNT / RESULT are pauses, not windows)
+const TIMED_SUBS = new Set([CER.NOMINATE, CER.VOTE, CER.REACTION, CER.EXECUTION, CER.CURSE, CER.EVENT, CER.DEBATE]);
 
 const INTERP_MS = 100;
 const STATIC_TARGETS = [
@@ -30,6 +34,10 @@ export class Game {
     this.players = new Map(); this.npcs = new Map(); this.tools = new Map(); this.items = new Map(); this.coins = new Map(); this.markers = new Map(); this.lard = new Map(); this.carryObjs = new Map(); this.runeSprites = new Map();
     this.target = null; this.holdingE = null; this.time = 0; this.slapT = 0; this.lastYaw = this.yaw; this.sway = new THREE.Vector2();
     this.booksPos = new Map();
+    this.cdWindow = new Countdown(n => this.audio.countdown(n));    // mutiny vote, debate, nomination, execution, …
+    this.cdCollapse = new Countdown(n => this.audio.countdown(n));  // work phase: Red Bar → next milestone
+    // own timer (not the render loop): cues must land on the second even when frames are slow or throttled
+    this.cdTimer = setInterval(() => { const n = performance.now(); this.cdWindow.update(n); this.cdCollapse.update(n); }, 40);
     this.initThree();
     this.initInput();
   }
@@ -216,7 +224,27 @@ export class Game {
     this.ui.updateHud(st, this);
     this.syncEntities(st);
     updateTally(this.world.tally, st.tally);
-    if (!prev || prev.phase !== st.phase) { if (st.phase === PHASE.LOBBY) this.ui.hideFinale(); }
+    if (!prev || prev.phase !== st.phase) { if (st.phase === PHASE.LOBBY) { this.ui.hideFinale(); this.purgeClientFx(); } }
+    // countdown audio (final 5 s)
+    const src = countdownSources(st, TIMED_SUBS), now = performance.now(), rate = st.ts || 1;
+    this.cdWindow.sample(src.window?.key, src.window?.t, now, rate, st.time);
+    this.cdCollapse.sample(src.collapse?.key, src.collapse?.t, now, rate, st.time);
+  }
+
+  /** Back in the lobby: wipe every client-side overlay / effect left over from the match. */
+  purgeClientFx() {
+    document.body.classList.remove('drunk');
+    for (const id of ['blind', 'ghostTint']) { const e = document.getElementById(id); if (e) e.style.opacity = 0; }
+    this.shake = 0; this.selfLocked = false; this.pending = []; this.outbox = []; this.offset.set(0, 0, 0);
+    this.body.ragdoll = 0; this.body.spin = 0; this.body.vx = this.body.vy = this.body.vz = 0;
+    this.camera.rotation.z = 0; this.camera.fov = 76; this.camera.updateProjectionMatrix();
+    this.keys.clear(); this.releaseE(); this.localHold = null; this.target = null;
+    this.ui.setHold(null); this.ui.purge();
+    this.audio.ptt = false;
+    this.cdWindow.reset(); this.cdCollapse.reset();
+    for (const P of this.pillars || []) this.scene.remove(P.g);
+    this.pillars = [];
+    setGhost(this.self, false);
   }
 
   onSnap(s) {
@@ -514,11 +542,12 @@ export class Game {
     const rag = b.ragdoll > 0;
     const px = b.x + this.offset.x, py = b.y + this.offset.y, pz = b.z + this.offset.z;
     this.camera.position.set(px, py + (rag ? 0.35 : EYE_H), pz);
+    const fumes = st.phase === PHASE.LOBBY ? 0 : you.fumes;
     let roll = rag ? Math.sin(b.spin * 1.3) * 0.9 : 0;
-    if (you.fumes > 0) roll += Math.sin(this.time * 1.7) * 0.12;
+    if (fumes > 0) roll += Math.sin(this.time * 1.7) * 0.12;
     this.shake = Math.max(0, (this.shake || 0) - dt);
     this.camera.rotation.set(this.pitch + (this.shake ? (Math.random() - 0.5) * this.shake * 0.1 : 0), this.yaw, roll);
-    this.camera.fov = 76 + (you.fumes > 0 ? Math.sin(this.time * 2.1) * 6 : 0) + (this.keys.has('ShiftLeft') && Math.hypot(b.vx, b.vz) > 5 ? 4 : 0);
+    this.camera.fov = 76 + (fumes > 0 ? Math.sin(this.time * 2.1) * 6 : 0) + (this.keys.has('ShiftLeft') && Math.hypot(b.vx, b.vz) > 5 ? 4 : 0);
     this.camera.updateProjectionMatrix();
     // own body
     this.self.position.set(px, py, pz); this.self.rotation.y = this.yaw;

@@ -192,13 +192,7 @@ export class Match {
     const chaos = ps.filter(p => p.faction === FACTIONS.CHAOS);
     this.chaosLeaderId = chaos[0]?.id ?? null;
     for (const p of ps) p.origFaction = p.faction;   // Blood Pact is based on the dealt identity
-    for (const p of ps) {
-      Object.assign(p, {
-        cardUsed: false, roleRevealed: false, crystals: ECONOMY.startCrystals, gold: 0, ghost: false,
-        servedMaster: 0, muted: false, gagged: false, fumesT: 0, immuneChaos: false, hasKey: false,
-        known: new Map(), knownNpcs: new Set(), exhausted: false,
-      });
-    }
+    for (const p of ps) this.resetPlayerState(p);             // every match starts from a clean slate
     // Chaos cultists (11p) know their leader & vice versa
     for (const a of chaos) for (const c of chaos) if (a !== c) a.known.set(c.id, FACTIONS.CHAOS);
     // First Master of Ceremonies — random
@@ -483,18 +477,50 @@ export class Match {
     this.log(`FINALE: ${winner} — ${reason}`);
   }
 
+  /**
+   * Purge EVERY match-scoped value from a player: status effects (Toxic Fumes drunkenness, muteness,
+   * gag, exhaustion, Chaos Ward, ghost, key), screen-overlay flags (blind/frozen), movement modifiers
+   * (carried / riding / held loads / ragdoll / shove immunity), cards, crystals, gold, private knowledge.
+   * Debug toggles (god mode, infinite mana) and the robe colour are deliberately kept.
+   * clearIdentity also removes faction / role (back to the lobby).
+   */
+  resetPlayerState(p, { clearIdentity = false } = {}) {
+    this.releaseAll(p);
+    // anyone still attached to this player (carrier / rider / carried) is detached too
+    for (const q of this.list) {
+      if (q.carriedBy === p.id) q.carriedBy = null;
+      if (q.ridingOn === p.id) q.ridingOn = null;
+      if (q.rider === p.id) q.rider = null;
+    }
+    Object.assign(p, {
+      cardUsed: false, roleRevealed: false, crystals: ECONOMY.startCrystals, gold: 0, ghost: false,
+      servedMaster: 0, exhausted: false, immuneChaos: false, publicNot: null, hasKey: false,
+      muted: false, mutedSince: -1, gagged: false, fumesT: 0,
+      frozen: false, blind: false, shoveCd: 0, shoveImmuneUntil: 0, lastShovedBy: null, slipCd: 0,
+      hold: null, holdT: 0, heldTool: null, heldItem: null, load: null,
+      carryingNpc: null, carryingPlayer: null, carriedBy: null, ridingOn: null, rider: null, carryHandle: null,
+      known: new Map(), knownNpcs: new Set(), botWorking: false, lastVoice: 0, chatQ: [],
+    });
+    if (clearIdentity) Object.assign(p, { faction: null, origFaction: null, roleId: null });
+    Object.assign(p.body, { vx: 0, vy: 0, vz: 0, ragdoll: 0, spin: 0, onGround: true });
+    if (p.isBot) this.bots.adopt(p);                         // fresh behaviour state
+  }
+
   returnToLobby(byId) {
     if (byId !== this.hostId || this.phase !== PHASE.FINALE) return;
     this.locked = false;
     this.phase = PHASE.LOBBY;
     this.tasks.clearAll(); this.npcs.reset(); this.cer.reset();
+    this.bars.reset(this.bars.M);
+    for (const p of this.list) if (p.disconnected) this.players.delete(p.id);   // players who left mid-match
     this.list.forEach((p, i) => {
-      this.releaseAll(p);
+      this.resetPlayerState(p, { clearIdentity: true });
       const s = lobbySpawn(i);
-      Object.assign(p, { faction: null, roleId: null, ghost: false, frozen: false, blind: false });
-      this.teleport(p, s.x, s.z, Math.PI);
+      this.teleport(p, s.x, s.z, 0);                          // facing the mirror
     });
-    this.masterId = this.execId = null;
+    this.masterId = this.execId = this.chaosLeaderId = null;
+    this.exhaustedQueue = []; this.tally = { fire: 0, blood: 0, chaos: 0 };
+    this.sacrificeLog = []; this.winner = null; this.finaleReason = ''; this.ceremonyIndex = 0;
     this.setPhase(PHASE.LOBBY);
   }
 

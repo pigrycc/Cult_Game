@@ -76,6 +76,7 @@ export class Ceremony {
 
   setSub(s, t, mode = null) {
     this.sub = s; this.t = t; this.mode = mode; this.subStart = this.m.time;
+    this.seq = (this.seq || 0) + 1;              // identifies this timed window for the client countdown audio
     this.applyFreeze();
   }
 
@@ -242,9 +243,14 @@ export class Ceremony {
     m.fx('count');
   }
 
+  /** Crystals a minion counts for AFTER role abilities (Instigator ×2, Pacifier → 0). */
+  effective(id) {
+    if (this.pacified.has(id)) return 0;
+    return (this.final.get(id) || 0) * (this.doubled.has(id) ? 2 : 1);
+  }
   total() {
     let s = 0;
-    for (const [id, v] of this.final) { if (this.pacified.has(id)) continue; s += v * (this.doubled.has(id) ? 2 : 1); }
+    for (const id of this.final.keys()) s += this.effective(id);
     return s;
   }
   rebels() { return [...this.final.entries()].filter(([id, v]) => v > 0 && !this.pacified.has(id)).map(([id]) => this.m.P(id)); }
@@ -267,18 +273,24 @@ export class Ceremony {
     }
     const rebels = this.rebels();
     const oldMaster = this.M;
-    // Highest raw contribution becomes the new Master (tie → random). Muted minions cannot run for Master.
+    // The highest EFFECTIVE contribution (after role abilities such as the Instigator's doubling) takes
+    // the staff; only a tie of effective totals is settled at random. Muted minions cannot run for Master.
     const cands = rebels.filter(r => !r.muted);
     const pool = cands.length ? cands : rebels;
-    const best = Math.max(...pool.map(r => this.final.get(r.id)));
-    const newMaster = pick(pool.filter(r => this.final.get(r.id) === best));
+    const best = Math.max(...pool.map(r => this.effective(r.id)));
+    const leaders = pool.filter(r => this.effective(r.id) === best);
+    const newMaster = pick(leaders);
+    const tieLine = leaders.length > 1 ? [`Tie at ${best} effective 💎 between ${leaders.map(l => l.name).join(' & ')} — settled by lot`] : [];
     for (const r of rebels) {
       const v = this.final.get(r.id);
       m.addCrystals(r, -v);                                  // lost permanently
       if (r.roleId === 3 && r.roleRevealed) m.addCrystals(r, 1);   // Rune Master recovers 1
       if (this.machi === r.id && r.id !== newMaster.id) { m.addCrystals(r, v); m.toast(r.id, '🎭 Machiavellian: your crystals return to your pouch.'); }
     }
-    const lossLines = rebels.map(r => `${r.name}: −${this.final.get(r.id)} 💎 played (now ${r.crystals})`);
+    const lossLines = rebels.map(r => {
+      const raw = this.final.get(r.id), eff = this.effective(r.id);
+      return `${r.name}: −${raw} 💎 played${eff !== raw ? ` (×2 → counts as ${eff})` : ''} (now ${r.crystals})`;
+    });
     m.masterId = newMaster.id; newMaster.servedMaster++;
     m.execId = null;
     this.grantAltarVision(newMaster);
@@ -291,7 +303,7 @@ export class Ceremony {
     m.appoint(newMaster, 'master');
     this.pause({
       icon: '⚔️', color: '#ff6b6b', title: `Rebellion succeeds (${total}/${th} 💎)`,
-      lines: [`${oldMaster?.name ?? '?'} is overthrown — ${newMaster.name} seizes the staff`, ...lossLines, 'The old duo is spared exhaustion • a new nomination follows'],
+      lines: [`${oldMaster?.name ?? '?'} is overthrown — ${newMaster.name} seizes the staff`, ...tieLine, ...lossLines, 'The old duo is spared exhaustion • a new nomination follows'],
     }, () => this.startNomination());
   }
 
@@ -653,7 +665,7 @@ export class Ceremony {
     const m = this.m;
     const showAmounts = [CER.COUNT, CER.REACTION].includes(this.sub);
     return {
-      sub: this.sub, t: Math.max(0, +this.t.toFixed(1)), mode: this.mode, milestone: this.milestone, eventKey: this.eventKey,
+      seq: this.seq || 0, sub: this.sub, t: Math.max(0, +this.t.toFixed(1)), mode: this.mode, milestone: this.milestone, eventKey: this.eventKey,
       infinite: this.sub === CER.DEBATE && m.dbg.debateInfinite,
       voted: [...this.votes.keys()], myVote: this.votes.get(viewer.id) ?? null,
       voter: this.isVoter(viewer),

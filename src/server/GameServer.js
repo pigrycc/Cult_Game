@@ -211,7 +211,7 @@ export class GameServer {
     const gates = {};
     for (const id of Object.keys(GATES)) gates[id] = m.gateClosedFor(v, id);
     const st = {
-      t: 'state', phase: m.phase, time: r2(m.time), phaseT: r2(m.phaseT), hostId: m.hostId,
+      t: 'state', phase: m.phase, ts: m.timeScale, time: r2(m.time), phaseT: r2(m.phaseT), hostId: m.hostId,
       you: {
         id: v.id, faction: v.faction, roleId: v.roleId, cardUsed: v.cardUsed, roleRevealed: v.roleRevealed, crystals: v.crystals, gold: v.gold,
         ability: chk, hold: v.hold ? { t: r2(v.holdT), need: v.hold.need === Infinity ? 0 : v.hold.need, target: v.hold.target } : null,
@@ -225,7 +225,7 @@ export class GameServer {
       tasks: m.phase === PHASE.LOBBY ? [] : m.tasks.serializeTasks(),
       world: m.tasks.serializeWorld(),
       npcs: m.npcs.serialize(v),
-      spy: { active: m.npcs.spyActive, id: m.npcs.spyId, t: r2(m.npcs.spyT), visited: m.npcs.masterVisited },
+      spy: { active: m.npcs.spyActive, id: m.npcs.spyId, t: r2(m.npcs.spyT), visited: m.npcs.masterVisited, n: m.npcs.spyN || 0 },
       cer: m.phase === PHASE.CEREMONY ? m.cer.serialize(v) : null,
       tally: m.tally, masterId: m.masterId, execId: m.execId,
       balance: { ...m.balance, threshold: m.cer.baseThreshold, players: m.players.size },

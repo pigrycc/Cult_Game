@@ -9,7 +9,8 @@
     "start": "electron dist/main.cjs",
     "server": "node dist/server.cjs 7777",
     "test:rules": "node tools/rules-test.mjs",
-    "test:sim": "node tools/sim-test.mjs 8 8"
+    "test:sim": "node tools/sim-test.mjs 8 8",
+    "test:bots": "node tools/bot-master-test.mjs"
   },
   "keywords": [],
   "author": "Crypt Dev Team",

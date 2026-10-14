@@ -59,7 +59,23 @@ export class ProgressBars {
     this.m.endMatch('nobody', 'The Red Bar reached the milestone first — THE CRYPT EXPLODED. Everyone loses.');
   }
 
+  /**
+   * Simulated seconds until the Red Bar reaches the next milestone (= the crypt explodes if the
+   * Yellow Bar hasn't got there first). Accounts for the discrete tick phase so the countdown is
+   * smooth. null when the bar is frozen / not running.
+   */
+  collapseEta() {
+    if (!this.running || this.m.dbg.freezeRed) return null;
+    const X = this.tickX, T = this.tickT;
+    if (!(X > 0)) return null;
+    const need = this.next - this.red;
+    if (need <= 1e-9) return 0;
+    const ticks = Math.ceil(need / X - 1e-9);
+    return Math.max(0, (ticks - 1) * T + (T - this.acc));
+  }
+
   serialize() {
-    return { red: this.red, yellow: this.yellow, markers: this.markers(), reached: this.reached, running: this.running && !this.m.dbg.freezeRed, tickX: this.tickX, tickT: this.tickT };
+    return { red: this.red, yellow: this.yellow, markers: this.markers(), reached: this.reached, running: this.running && !this.m.dbg.freezeRed, tickX: this.tickX, tickT: this.tickT,
+      eta: this.collapseEta() == null ? null : +this.collapseEta().toFixed(2) };
   }
 }

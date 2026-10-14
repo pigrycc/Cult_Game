@@ -111,6 +111,16 @@ export class UI {
     this.big(`⛔ ${text}`, '', 2.2, '#ff5a4a');
     void this.bigEl.offsetWidth; this.bigEl.classList.add('err');
   }
+  /** Clear every transient on-screen element (used when returning to the lobby). */
+  purge() {
+    clearTimeout(this.bigT); this.bigEl.style.opacity = 0; this.bigEl.innerHTML = ''; this.bigEl.classList.remove('err');
+    this.toastsEl.innerHTML = ''; $('#chatLog').innerHTML = ''; this.closeChat();
+    this.labels = []; this.bubbles.clear(); this.holdFx = null; $('#holdBox').classList.remove('done', 'cancel', 'continuous');
+    $('#cerPanel').dataset.h = ''; $('#cerPanel').innerHTML = ''; $('#cerPanel').style.display = 'none';
+    $('#tooltip').style.display = 'none'; $('#prompt').dataset.t = ''; $('#prompt').innerHTML = '';
+    $('#reveal').classList.add('hidden'); $('#score').classList.add('hidden');
+    if (this.modalOpen && this.closeModal) this.closeModal();
+  }
   label(id, text, color, dur) { this.labels.push({ id, text, color, until: performance.now() + dur * 1000 }); }
 
   // ------------------------------------------------------------------ chat
@@ -209,12 +219,14 @@ export class UI {
     // --- phase timer / spy timer
     const pt = $('#phaseTimer');
     if (st.cer) pt.innerHTML = `${st.cer.infinite ? '∞' : Math.ceil(st.cer.t) + 's'} <span>${cerTitle(st)}</span>`;
+    else if (st.phase === PHASE.WORK && st.bars.eta != null && st.bars.eta / (st.ts || 1) <= 5) pt.innerHTML = `<span class="collapseWarn">⚠ ${Math.max(1, Math.ceil(st.bars.eta / (st.ts || 1)))}s</span> <span>the Red Bar reaches the milestone — the crypt collapses!</span>`;
     else if (st.spy.active && st.spy.id === you.id) pt.innerHTML = `🕳️ ${Math.ceil(st.spy.t)}s <span>Oubliette Spy window</span>`;
     else pt.innerHTML = '';
     // --- blind / fumes overlays
-    $('#blind').style.opacity = you.blind ? 0.97 : 0;
-    document.body.classList.toggle('drunk', you.fumes > 0);
-    $('#ghostTint').style.opacity = you.ghost ? 0.25 : 0;
+    const inLobby = st.phase === PHASE.LOBBY;
+    $('#blind').style.opacity = !inLobby && you.blind ? 0.97 : 0;
+    document.body.classList.toggle('drunk', !inLobby && you.fumes > 0);
+    $('#ghostTint').style.opacity = !inLobby && you.ghost ? 0.25 : 0;
     // --- debug panel data
     if (game.debug) game.debug.update(st);
   }
