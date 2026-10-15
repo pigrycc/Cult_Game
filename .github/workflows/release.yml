@@ -1,4 +1,4 @@
-name: Build Windows release
+name: Build release packages
 
 on:
   push:
@@ -6,15 +6,23 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to attach the zip to'
+        description: 'Release tag to attach the zip(s) to'
         required: true
-        default: 'v0.9.0'
+        default: 'v0.9.3'
+      targets:
+        description: 'What to build'
+        required: true
+        default: 'all'
+        type: choice
+        options: [all, windows, macos]
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  # ------------------------------------------------------------------ Windows x64 (.exe)
+  build-windows:
+    if: github.event_name != 'workflow_dispatch' || inputs.targets != 'macos'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,5 +39,60 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Crypt of Minions $TAG" --notes "Windows x64 portable build. Unzip and run CryptOfMinions.exe."
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Crypt of Minions $TAG" --notes "Portable builds. Windows: unzip and run CryptOfMinions.exe. macOS: see README_MAC.txt inside the zip." || gh release view "$TAG" >/dev/null
           gh release upload "$TAG" release/CryptOfMinions-win32-x64.zip --clobber
+
+  # ------------------------------------------------------------------ macOS universal (.app, Apple Silicon + Intel)
+  # Built on a real Mac runner: the universal merge needs `lipo`, Apple Silicon needs a (at least ad-hoc)
+  # valid code signature, and zipping must preserve symlinks/modes (`ditto`). Nothing here can be done on Linux.
+  build-macos:
+    if: github.event_name != 'workflow_dispatch' || inputs.targets != 'windows'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node tools/rules-test.mjs
+      - run: node build.mjs --package-mac
+      - name: Verify the shipped zip (unzip it fresh, check signature + architectures)
+        run: |
+          rm -rf verify && mkdir verify
+          ditto -x -k release/CryptOfMinions-macOS-universal.zip verify
+          APP="verify/CryptOfMinions-macOS/Crypt of Minions.app"
+          test -d "$APP" && test -f verify/CryptOfMinions-macOS/README_MAC.txt
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "archs: $(lipo -archs "$APP/Contents/MacOS/Crypt of Minions")"
+          lipo -archs "$APP/Contents/MacOS/Crypt of Minions" | grep -q arm64
+          lipo -archs "$APP/Contents/MacOS/Crypt of Minions" | grep -q x86_64
+          plutil -p "$APP/Contents/Info.plist" | grep -E "NSMicrophoneUsageDescription|NSLocalNetworkUsageDescription|CFBundleIdentifier"
+          ls -la "$APP/Contents/Frameworks/Electron Framework.framework/" | head -8   # symlinks must have survived the zip
+      - name: Launch the packaged app (native arm64) and run the self-test
+        run: |
+          EXE="verify/CryptOfMinions-macOS/Crypt of Minions.app/Contents/MacOS/Crypt of Minions"
+          CRYPT_SMOKE=1 "$EXE" > smoke-arm64.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 100); do kill -0 $PID 2>/dev/null || break; sleep 1; done
+          if kill -0 $PID 2>/dev/null; then echo "TIMEOUT – killing"; kill -9 $PID; fi
+          cat smoke-arm64.log | grep -E "SMOKE_RESULT|Error|error" | head -20
+          grep -q '"ok":true' smoke-arm64.log
+      - name: Launch the Intel (x86_64) half under Rosetta
+        continue-on-error: true
+        run: |
+          sudo softwareupdate --install-rosetta --agree-to-license || true
+          EXE="verify/CryptOfMinions-macOS/Crypt of Minions.app/Contents/MacOS/Crypt of Minions"
+          CRYPT_SMOKE=1 arch -x86_64 "$EXE" > smoke-x64.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 120); do kill -0 $PID 2>/dev/null || break; sleep 1; done
+          if kill -0 $PID 2>/dev/null; then echo "TIMEOUT – killing"; kill -9 $PID; fi
+          cat smoke-x64.log | grep -E "SMOKE_RESULT|Error|error" | head -20
+          grep -q '"ok":true' smoke-x64.log
+      - name: Attach zip to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Crypt of Minions $TAG" --notes "Portable builds. Windows: unzip and run CryptOfMinions.exe. macOS: see README_MAC.txt inside the zip." || gh release view "$TAG" >/dev/null
+          gh release upload "$TAG" release/CryptOfMinions-macOS-universal.zip --clobber
