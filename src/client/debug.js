@@ -7,7 +7,7 @@ import { TASKS, TASK_KEYS } from '../shared/tasks.js';
 
 // Configuration commands persisted to localStorage and re-applied automatically on the next start
 const PERSIST = new Set(['red_tick', 'freeze_red', 'yellow_mul', 'timescale', 'force_event', 'npc_config', 'debate_timer', 'max_concurrent',
-  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
+  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
 const STORE = 'crypt_debug_settings_v1';
 export function loadDebugSettings() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { return {}; } }
 function saveDebugSettings(o) { try { localStorage.setItem(STORE, JSON.stringify(o)); } catch { /* storage unavailable */ } }
@@ -68,6 +68,8 @@ export class DebugMenu {
       <details open><summary>2. Bot Management</summary>
         <label>Spawn Bot Count <input type="range" id="dBots" min="0" max="10" value="${st.players.filter(p => p.bot).length}"><b id="dBotsV">${st.players.filter(p => p.bot).length}</b><button data-c="bots">Apply (lobby)</button></label>
         <label>Bot Behaviour <select id="dBotMode">${[['idle', 'Dummy / Idle'], ['roamer', 'Random Task Roamer'], ['voter', 'Ceremony Auto-Voter'], ['human', 'Humanlike (tasks, politics, role cards)']].map(([v, l]) => opt(v, l, d.botMode === v)).join('')}</select></label>
+        <label>Humanlike reaction delay <input type="range" id="dBotDelay" min="0" max="8" step="0.25" value="${d.botDecisionDelaySeconds ?? 2.25}"><b id="dBotDelayV">${(d.botDecisionDelaySeconds ?? 2.25)}s</b> <span class="small">(botDecisionDelaySeconds, ±33 %: votes, nominations, captives, role cards)</span></label>
+        <label><input type="checkbox" id="dBotChat" ${d.botChat !== false ? 'checked' : ''}> Humanlike bot chat / banter</label>
         <label>Bot Movement Speed ×<input id="dBotSpd" type="number" step="0.1" min="0.1" max="4" value="${d.botSpeed ?? 1}" style="width:60px"><button data-c="botspeed">Set</button></label>
         <div class="small">Force Bot Role/Faction: pick the bot as Target in section 1.</div>
       </details>
@@ -161,6 +163,9 @@ export class DebugMenu {
     document.getElementById('dGod').onchange = e => this.cmd('god_mode', { on: e.target.checked });
     document.getElementById('dInf').onchange = e => this.cmd('infinite_mana', { pid: tgt(), on: e.target.checked });
     document.getElementById('dFreeze').onchange = e => this.cmd('freeze_red', { on: e.target.checked });
+    document.getElementById('dBotDelay').oninput = e => { document.getElementById('dBotDelayV').textContent = e.target.value + 's'; };
+    document.getElementById('dBotDelay').onchange = e => this.cmd('bot_delay', { s: +e.target.value });
+    document.getElementById('dBotChat').onchange = e => this.cmd('bot_chat', { on: e.target.checked });
     document.getElementById('dNoSprint').onchange = e => this.cmd('disable_sprint', { on: e.target.checked });
     document.getElementById('dShove').oninput = e => { document.getElementById('dShoveV').textContent = e.target.value + '%'; };
     document.getElementById('dShove').onchange = e => this.cmd('shove_drop', { pct: +e.target.value });

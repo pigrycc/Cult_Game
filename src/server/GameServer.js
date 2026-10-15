@@ -96,7 +96,7 @@ export class GameServer {
         break;
       }
       case 'use': if (process.env.CRYPT_TRACE) this.log('[use]', p.name, msg.target, p.body.x.toFixed(2), p.body.z.toFixed(2), m.phase, p.frozen); this.use(p, String(msg.target || '')); break;
-      case 'release': if (p.hold) m.releaseHold(p, 'cancel'); break;
+      case 'release': if (p.hold) m.releaseHold(p, 'cancel', true); break;
       case 'lmb': this.lmb(p, msg.target ? String(msg.target) : null); break;
       case 'drop':
         if (p.carryingNpc && m.phase === PHASE.WORK) m.npcs.dropCarried(p, false);

@@ -58,6 +58,7 @@ Freezing / blinding per sub-state is centralised in `Ceremony.applyFreeze()`.
 | `NpcSystem` | captive pool (every captive rolls a faction AND a mandatory curse: Mana Boost, Mana Drain, Toxic Fumes, Insight Eye, Gagging Seal; debug toggle adds Call of the Abyss / Dark Initiation), Selection Chamber, altar, Prison, glyph authorisation (fog of war), spyhole |
 | `Ceremony` | nomination, mutiny resolution, execution, curses, milestone events, debate, exhaustion |
 | `Roles` | 21 card abilities with timing windows + target validation, `roleRevealed` broadcast |
+| `BotChat` | Humanlike-only banter: nomination reactions by faction knowledge, Executioner announcements and bluffs (lies only about hidden information — the rejected captive / which side — never about publicly revealed facts), debate suspicion from observed behaviour (`player.obs`: idle time, abandoned tasks, finished tasks), self-defence when named. Rate-limited, de-duplicated, every line audited in `log` with a `lie` flag |
 | `Bots` | FSM bots (idle / roamer / voter / humanlike) with A* over a nav-node graph and thematic names; always perform Master/Executioner duties. Humanlike bots reason with their legitimate knowledge (Blood Pact, inspections, flogging) to vote, pick captives/executioners/victims and play role cards |
 | `Debug` | every Dev-Console command, host-authorised |
 | `GameServer` | transport, per-viewer filtering, voice routing |
@@ -90,6 +91,9 @@ big.avatars [{name,color}]  ← coloured minion portraits on banners (2 = nomina
 Voice (binary): client → host = Int16 PCM, 16 kHz mono. Host → listener = `[speakerId u8][gain u8][flags u8][PCM]`;
 gain = proximity falloff (20 m) × 0.3^(walls between) or intercom pipe path, global (1.0) outside the Work Phase;
 muted / gagged speakers are dropped; flag 1 = Toxic Fumes (client garbles pitch + distortion), flag 2 = intercom (band-pass "tinny pipe").
+
+## 5a. Bot task realism
+Humanlike bots perform chores with the same validated server actions as players (`TaskManager.use`): walk to the rack, pick up the tool (`tool:` target), walk to the task, hold. The server's own tool check is the barrier. Supported mechanics: hold, fetch, runes, coop (waits up to 24 s for a partner and asks for help in chat). Carry, bell, bellows, stack, relay, carcass, calib and books need choreography and are left to players. Roamer bots (fast test mode) keep a timer but it only runs while the required tool is in hand (`botMayWork` / `botComplete`). Reaction time before votes, nominations, captive choice and role cards = `dbg.botDecisionDelaySeconds` ±33 % (default 2.25 s; 0 = instant).
 
 ## 5b. Countdown audio (last 5 s)
 `client/countdown.js` turns the host's "seconds left" samples into one cue per second: 5 → 1 escalating ticks, 0 = time's-up thud (`Audio.countdown`). It is driven by its own 40 ms timer, interpolates between 10 Hz packets, and uses the host's sim clock (`state.time`, `state.ts`) to tell a real jump (vote closed early → silent, extended window → restarts) from client lag.

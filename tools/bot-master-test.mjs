@@ -12,7 +12,7 @@ function setup(mode, { holdItem = false, seed = 0 } = {}) {
   const ids = [];
   for (let i = 0; i < 7; i++) ids.push(m.addPlayer({ name: 'P' + i, isHost: i === 0, isBot: i > 0 }).id);
   m.list.forEach(p => { if (p.isBot) m.bots.adopt(p); });
-  m.dbg.botMode = mode; m.dbg.freezeRed = true;
+  m.dbg.botMode = mode; m.dbg.freezeRed = true; m.dbg.yellowMul = 0; m.dbg.botDecisionDelaySeconds = 0;     // the other bots' chores must not trigger a milestone mid-test
   m.timers.revealBack = m.timers.revealFront = 0.5;
   m.startGame(ids[0]);
   m.phaseT = 0; m.tick(0.016);
@@ -43,6 +43,9 @@ for (const mode of ['human', 'roamer']) {
   }
 }
 { const { m, bot } = setup('human', { holdItem: true }); const r = run(m, bot); ok(r.done, 'Master bot that was holding an item still fetches captives'); }
+// with the default thinking delay the Master must still finish well inside a real work phase (50–65 s)
+{ const { m, bot } = setup('human'); m.dbg.botDecisionDelaySeconds = 2.25; const r = run(m, bot, 60);
+  ok(r.done && r.t < 40, `Humanlike Master with the default 2.25 s thinking delay finishes in ${r.t.toFixed(1)}s (< 40 s)`); }
 // the chosen captive must stay stable once the bot is inside the chamber
 { const { m, bot } = setup('human'); let flips = 0, prev = null;
   for (let i = 0; i < 2400 && m.npcs.altar().length < 1; i++) { m.tick(0.05); const c = bot.brain?.captive; if (c != null && prev != null && c !== prev) flips++; if (c != null) prev = c; }

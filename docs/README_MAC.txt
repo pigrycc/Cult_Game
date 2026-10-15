@@ -23,6 +23,10 @@ HOST A GAME
 JOIN A GAME
   Main menu → type the host's  ip:port  → JOIN.
 
+HUMANLIKE BOTS
+  Debug console → Bot Behaviour → "Humanlike": they fetch tools before using them, think before big decisions
+  (slider: "Humanlike reaction delay") and talk — accusations, defences, bluffs.
+
 SOLO TEST WITH BOTS
   Host → in the lobby open the debug console → Spawn Bot Count 4–10 → Apply → [START GAME].
 

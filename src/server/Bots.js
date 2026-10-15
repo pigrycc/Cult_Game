@@ -17,6 +17,12 @@ import { NAV_NODES, NAV_EDGES, PORTAL, roomAt } from '../shared/map.js';
 import { wallsBetween } from '../shared/physics.js';
 import { pick, rand, dist2, weighted } from './util.js';
 
+// Task mechanics a Humanlike bot performs with the REAL game actions (same validated calls a human triggers).
+// Everything else (carry, bell, bellows, stack, relay, carcass, calib, books) needs choreography the bots can't do yet, so
+// Humanlike bots leave those to players instead of faking them.
+const REAL_MECH = new Set(['hold', 'fetch', 'runes', 'coop']);
+const USE_RANGE = 1.7;       // how close a bot stands before it interacts
+
 export const BOT_NAMES = [
   'Grubwick', 'Snivel', 'Mumblecowl', 'Torchnose', 'Wickles', 'Grimsby', 'Pudding', 'Sootfoot', 'Nubbin', 'Moldrick',
   'Tallowmere', 'Gristle', 'Bonnet', 'Skulkin', 'Dribble', 'Hobnail', 'Crumbsworth', 'Wormwood', 'Fennick', 'Bramble',
@@ -69,7 +75,7 @@ export class Bots {
   }
   removeAll() { for (const p of this.m.list) if (p.isBot && this.m.phase === PHASE.LOBBY) this.m.players.delete(p.id); }
 
-  adopt(p) { p.brain = { state: 'pick', path: [], goal: null, t: 0, stuck: 0, last: { x: p.body.x, z: p.body.z }, lastCheck: 0, cerKey: null, decT: 0, done: false, jit: 0 }; }
+  adopt(p) { p.brain = { persona: { chatty: rand(0.4, 0.9) }, state: 'pick', path: [], goal: null, t: 0, stuck: 0, last: { x: p.body.x, z: p.body.z }, lastCheck: 0, cerKey: null, decT: 0, done: false, jit: 0 }; }
 
   // ---------------------------------------------------------------- steering
   navTo(p, goal, dt, input) {
@@ -124,35 +130,182 @@ export class Bots {
     if (p.id === m.masterId && !p.ghost && this.masterDuty(p, dt, input)) return;
     if (mode === 'human') this.tryAbility(p, dt);
     if (mode !== 'roamer' && mode !== 'human') return;
-    if (B.state === 'pick') {
-      const tasks = [...m.tasks.active.values()];
-      if (!tasks.length) return;
-      const claimed = new Set(m.list.filter(q => q.brain && q !== p && q.brain.task).map(q => q.brain.task));
-      const sorted = tasks.filter(t => !claimed.has(t.uid)).map(t => ({ t, d: dist2(p.body, m.tasks.mainPoint(t)) })).sort((a, b) => a.d - b.d);
-      const ch = pick(sorted.slice(0, 3));
-      if (!ch) return;
-      B.task = ch.t.uid; B.state = 'go'; B.goal = null; B.stuck = 0;
-    } else if (B.state === 'go') {
-      const inst = m.tasks.active.get(B.task);
-      if (!inst || B.stuck > 6) { B.state = 'pick'; B.task = null; return; }
-      const pt = m.tasks.mainPoint(inst);
-      if (this.navTo(p, pt, dt, input) || dist2(p.body, pt) < 1.4) { B.state = 'work'; B.t = rand(5, 9); }
-    } else if (B.state === 'work') {
-      const inst = m.tasks.active.get(B.task);
-      if (!inst) { B.state = 'pick'; B.task = null; return; }
-      p.botWorking = true;
-      const pt = m.tasks.mainPoint(inst);
-      input.yaw = Math.atan2(-(pt.x - p.body.x), -(pt.z - p.body.z));
-      B.t -= dt;
-      if (B.t <= 0) { m.tasks.forceComplete(inst, [p]); B.state = 'pick'; B.task = null; }
+    this.doTask(p, dt, input);
+  }
+
+  // ================================================================ maintenance tasks
+  /** Think-time before a big decision. Humanlike bots use the (debug-tunable) botDecisionDelaySeconds ±33 %. */
+  think() {
+    const d = this.m.dbg.botDecisionDelaySeconds ?? 2.25;
+    return d <= 0 ? 0 : d * rand(0.67, 1.33);
+  }
+
+  isClaimed(uid, except) {
+    const inst = this.m.tasks.active.get(uid);
+    const cap = inst && inst.def.mech === 'coop' ? inst.def.handles.length : 1;
+    return this.m.list.filter(q => q !== except && q.brain && q.brain.task === uid && q.brain.state !== 'pick').length >= cap;
+  }
+
+  abandonTask(p, cooldown = 0) {
+    const m = this.m, B = p.brain;
+    if (B.task != null && cooldown) (B.skip ||= new Map()).set(B.task, m.time + cooldown);
+    if (p.hold) m.releaseHold(p, 'silent', true);
+    B.state = 'pick'; B.task = null; B.toolId = null; B.waitTool = 0; B.waitPartner = 0; B.fails = 0; B.goal = null; B.calledHelp = false;
+  }
+
+  /** Choose a task: cheapest total walk (tool detour included), only ones the bot can really perform. */
+  pickTask(p) {
+    const m = this.m, B = p.brain, real = m.dbg.botMode === 'human';
+    const held = m.tasks.heldToolType(p);
+    const opts = [];
+    for (const t of m.tasks.active.values()) {
+      if (real && !REAL_MECH.has(t.def.mech)) continue;
+      if ((B.skip?.get(t.uid) ?? 0) > m.time) continue;
+      if (this.isClaimed(t.uid, p)) continue;
+      const pt = m.tasks.mainPoint(t);
+      let cost = dist2(p.body, pt);
+      const need = t.def.tool;
+      if (need && held !== need) {
+        const tool = m.tasks.nearestFreeTool(need, p.body);
+        if (!tool) continue;                                   // every such tool is taken → pick something else
+        cost = dist2(p.body, tool) + dist2(tool, pt) + 4;
+      }
+      if (t.def.mech === 'coop') cost += 6;                    // needs a partner: slightly less attractive
+      opts.push({ t, cost });
     }
+    opts.sort((x, y) => x.cost - y.cost);
+    return pick(opts.slice(0, 3))?.t ?? null;
+  }
+
+  doTask(p, dt, input) {
+    const m = this.m, B = p.brain, real = m.dbg.botMode === 'human';
+    B.state ||= 'pick';
+    let inst = B.task != null ? m.tasks.active.get(B.task) : null;
+    if (B.state !== 'pick' && !inst) { this.abandonTask(p); return; }       // finished by someone else / removed
+
+    if (B.state === 'pick') {
+      const t = this.pickTask(p);
+      if (!t) return;
+      B.task = t.uid; B.state = 'tool'; B.goal = null; B.stuck = 0; B.fails = 0; B.t = rand(5, 9); B.progressAt = m.time; B.lastProg = -1;
+      // hands: put back a tool we no longer need (the rack is where others look for it)
+      const held = m.tasks.heldToolType(p);
+      if (held && held !== t.def.tool) m.tasks.returnTool(p);
+      return;
+    }
+    if (m.time - B.progressAt > 60) { this.abandonTask(p, 90); return; }        // nothing changed for a minute → give up on this one
+    const prog = inst.rep * 10 + inst.progress; if (prog !== B.lastProg) { B.lastProg = prog; B.progressAt = m.time; }
+
+    if (B.state === 'tool') {
+      const need = inst.def.tool;
+      if (!need || m.tasks.heldToolType(p) === need) { B.state = 'go'; B.goal = null; return; }
+      let tool = B.toolId ? m.tasks.tools.get(B.toolId) : null;
+      if (!tool || tool.heldBy || tool.type !== need) tool = m.tasks.nearestFreeTool(need, p.body);
+      if (!tool) { B.waitTool = (B.waitTool || 0) + dt; if (B.waitTool > 6) this.abandonTask(p, 30); return; }
+      B.toolId = tool.id; B.waitTool = 0;
+      if (dist2(p.body, tool) < 1.6) {
+        input.yaw = Math.atan2(-(tool.x - p.body.x), -(tool.z - p.body.z));
+        m.tasks.use(p, 'tool:' + tool.id);
+        if (m.tasks.heldToolType(p) !== need && ++B.fails > 10) this.abandonTask(p, 45);
+      } else this.navTo(p, tool, dt, input);
+      return;
+    }
+
+    // the tool is mandatory: if it is lost mid-task (dropped, ragdolled, taken) the bot goes back for it
+    if (inst.def.tool && m.tasks.heldToolType(p) !== inst.def.tool) { if (p.hold) m.releaseHold(p, 'silent'); B.state = 'tool'; B.toolId = null; return; }
+
+    if (B.state === 'go') {
+      const tgt = real ? this.nextTarget(p, inst) : { pos: m.tasks.mainPoint(inst) };
+      if (!tgt) return;
+      if (dist2(p.body, tgt.pos) < USE_RANGE) { B.state = 'work'; B.goal = null; B.fails = 0; }
+      else if (this.navTo(p, tgt.pos, dt, input) && dist2(p.body, tgt.pos) < 3.0) { B.state = 'work'; B.goal = null; }
+      else if (B.stuck > 6) this.abandonTask(p, 60);
+      return;
+    }
+    if (B.state === 'work') {
+      if (real) this.workReal(p, inst, dt, input); else this.workAbstract(p, inst, dt, input);
+    }
+  }
+
+  /** Roamer (fast test automaton): timer-based, but ONLY ticks while the required tool is in hand. */
+  workAbstract(p, inst, dt, input) {
+    const m = this.m, B = p.brain;
+    p.botWorking = true;
+    const pt = m.tasks.mainPoint(inst);
+    input.yaw = Math.atan2(-(pt.x - p.body.x), -(pt.z - p.body.z));
+    if (!m.tasks.botMayWork(p, inst)) { B.state = 'tool'; return; }
+    B.t -= dt;
+    if (B.t <= 0) { m.tasks.botComplete(p, inst); B.state = 'pick'; B.task = null; B.toolId = null; }
+  }
+
+  /** What the bot should walk to / interact with next for this task. {pos, kind:'use'|'item'|'runes', id} */
+  nextTarget(p, inst) {
+    const m = this.m, T = m.tasks, d = inst.def, pts = T.points(inst);
+    const P = id => pts.find(q => q.id === `task:${inst.uid}:${id}`);
+    switch (d.mech) {
+      case 'hold': { const pt = pts[0]; return pt && { pos: pt, kind: 'use', id: pt.id }; }
+      case 'runes': { const pt = pts[0]; return pt && { pos: pt, kind: 'runes', id: pt.id }; }
+      case 'fetch': {
+        let step = null;
+        if (d.tool) { if (p.load && p.load.uid === inst.uid) step = p.load.step; }
+        else { const it = T.items.get(p.heldItem); if (it && it.taskUid === inst.uid) step = it.step; }
+        if (step != null) { const pt = P('s' + step); return pt && { pos: pt, kind: 'use', id: pt.id }; }
+        if (!d.tool && d.srcs) {                                     // loose items lying around the room
+          let best = null, bd = Infinity;
+          for (const it of T.items.values()) if (it.taskUid === inst.uid && !it.heldBy && it.step === 0) { const dd = dist2(p.body, it); if (dd < bd) { bd = dd; best = it; } }
+          return best && { pos: { x: best.x, z: best.z, y: best.y }, kind: 'item', id: 'item:' + best.id };
+        }
+        const pt = P('src'); return pt && { pos: pt, kind: 'use', id: pt.id };
+      }
+      case 'coop': {
+        const taken = new Set(m.list.filter(q => q !== p && q.hold && q.hold.uid === inst.uid).map(q => q.hold.target));
+        const free = pts.filter(q => !taken.has(q.id));
+        free.sort((a, b) => dist2(p.body, a) - dist2(p.body, b));
+        const pt = (p.hold && p.hold.uid === inst.uid ? pts.find(q => q.id === p.hold.target) : null) || free[0];
+        return pt && { pos: pt, kind: 'use', id: pt.id };
+      }
+      default: return null;
+    }
+  }
+
+  /** Humanlike: perform the task exactly like a player — walk, interact, keep holding, repeat. */
+  workReal(p, inst, dt, input) {
+    const m = this.m, T = m.tasks, B = p.brain, d = inst.def;
+    p.botWorking = !!p.hold;
+    if (p.hold) {                                                  // holding [E] on something right now
+      const pos = p.hold.pos;
+      input.yaw = Math.atan2(-(pos.x - p.body.x), -(pos.z - p.body.z));
+      if (d.mech === 'coop' && p.hold.need === Infinity) {         // waiting for a partner on the other handle
+        B.waitPartner = (B.waitPartner || 0) + dt;
+        if (!B.calledHelp && B.waitPartner > 1.5) { B.calledHelp = true; m.botChat.onNeedPartner(p, inst); }
+        if (B.waitPartner > 24) this.abandonTask(p, 60);           // nobody came
+      }
+      return;
+    }
+    B.waitPartner = 0;
+    if (d.mech === 'runes') {                                      // read the glowing wall rune, move the bookmark
+      const tgt = this.nextTarget(p, inst); if (!tgt) return;
+      if (dist2(p.body, tgt.pos) > USE_RANGE + 0.4) { B.state = 'go'; return; }
+      input.yaw = Math.atan2(-(27 - p.body.x), -(8.3 - p.body.z));
+      B.t -= dt;
+      if (B.t <= 0) { T.answerRunes(p, inst.uid, inst.data.rune); B.t = rand(1.4, 2.4); }
+      return;
+    }
+    const tgt = this.nextTarget(p, inst);
+    if (!tgt) { B.state = 'go'; return; }
+    if (dist2(p.body, tgt.pos) > USE_RANGE + 0.5) { B.state = 'go'; B.goal = null; return; }
+    input.yaw = Math.atan2(-(tgt.pos.x - p.body.x), -(tgt.pos.z - p.body.z));
+    const before = inst.rep * 10 + inst.progress;
+    T.use(p, tgt.id);                                              // the server enforces tool / range / occupancy
+    if (!p.hold && inst.rep * 10 + inst.progress === before && T.active.has(inst.uid) && ++B.fails > 8) {
+      this.abandonTask(p, 45);                                     // refused repeatedly (e.g. wrong state) → try another task
+    } else if (p.hold) B.fails = 0;
   }
 
   ceremony(p, dt, input) {
     const m = this.m, cer = m.cer, B = p.brain;
     p.botWorking = false;
     const key = `${m.ceremonyIndex}:${cer.sub}:${cer.mode}:${m.masterId}:${m.execId}`;
-    if (B.cerKey !== key) { B.cerKey = key; B.decT = rand(1.0, 2.4); B.done = false; B.victim = null; B.goal = null; }
+    if (B.cerKey !== key) { B.cerKey = key; B.decT = m.dbg.botMode === 'human' ? this.think() : rand(1.0, 2.4); B.done = false; B.victim = null; B.goal = null; B.liftAt = null; }
     B.decT -= dt;
     const ready = B.decT <= 0 && !B.done;
     const mode = m.dbg.botMode, human = mode === 'human';
@@ -178,8 +331,9 @@ export class Bots {
           if (!p.carryingNpc) {
             const n = B.victim ? m.npcs.npcs.get(B.victim) : (human ? this.bestCaptive(p, m.npcs.altar()) : pick(m.npcs.altar()));
             if (!n || n.state !== 'altar') { B.victim = null; break; }
-            B.victim = n.id;
-            if (this.navTo(p, { x: n.x, z: n.z + 1.0 }, dt, input) || dist2(p.body, n) < 2.2) m.npcs.lmb(p, n.id);
+            if (B.victim !== n.id) { B.victim = n.id; if (human) { B.liftAt = m.time + this.think(0.6); m.botChat.onExecChoice(p, n); } }
+            const near = this.navTo(p, { x: n.x, z: n.z + 1.0 }, dt, input) || dist2(p.body, n) < 2.2;
+            if (near && (B.liftAt == null || m.time >= B.liftAt)) m.npcs.lmb(p, n.id);
           } else if (this.navTo(p, { x: 0, z: 3.4 }, dt, input) || dist2(p.body, PORTAL) < 4.6) m.npcs.lmbCarrying(p);
         }
         break;
@@ -221,7 +375,7 @@ export class Bots {
   masterDuty(p, dt, input) {
     const m = this.m, B = p.brain, human = m.dbg.botMode === 'human';
     const key = `${m.ceremonyIndex}:${m.masterId}`;
-    if (B.dutyKey !== key) { B.dutyKey = key; B.captive = null; B.dutyT = 0; B.grabFails = 0; B.gaveUp = false; }
+    if (B.dutyKey !== key) { B.dutyKey = key; B.captive = null; B.dutyT = 0; B.grabFails = 0; B.gaveUp = false; B.pickAt = null; }
     if (B.gaveUp) return false;
 
     if (p.carryingNpc) {                                       // deliver
@@ -234,7 +388,7 @@ export class Bots {
     if (need <= 0 || !ch.length || m.npcs.spyActive) { B.captive = null; return false; }
 
     B.dutyT += dt;
-    if (B.dutyT > 45) { B.gaveUp = true; return false; }       // never loop forever: the crypt auto-picks at the ceremony
+    if (B.dutyT > 45 + (human ? 2 * (m.dbg.botDecisionDelaySeconds ?? 2.25) : 0)) { B.gaveUp = true; return false; }       // never loop forever: the crypt auto-picks at the ceremony
     if (p.heldItem) m.tasks.dropItem(p);                       // lifting a captive needs free hands
     B.state = 'pick'; B.task = null;                           // abandon any half-done chore
 
@@ -244,7 +398,12 @@ export class Bots {
       this.navTo(p, { x: 0, z: -19.4 }, dt, input);
       return true;
     }
-    if (!n) {                                                  // choose (once)
+    if (!n) {                                                  // choose (once) — after looking the captives over
+      if (human) {
+        B.pickAt ??= m.time + this.think();
+        if (m.time < B.pickAt) { const c = ch[Math.floor(m.time * 0.8) % ch.length]; input.yaw = Math.atan2(-(c.x - p.body.x), -(c.z - p.body.z)); return true; }
+        B.pickAt = null;
+      }
       n = human ? this.bestCaptive(p, ch) : ch[0];
       B.captive = n.id; B.grabFails = 0;
     }
@@ -305,6 +464,8 @@ export class Bots {
   /** Fire the role card when it helps this bot's cult. Throttled; runs in Work and Ceremony. */
   tryAbility(b, dt) {
     const m = this.m, B = b.brain, R = m.roles, cer = m.cer;
+    const win = `${m.phase}:${cer.seq}`;
+    if (B.abilWin !== win) { B.abilWin = win; B.abilT = 0.05; }       // a new window opened → look at the card right away
     B.abilT = (B.abilT ?? (2 + Math.random() * 4)) - dt;
     if (B.abilT > 0 || b.cardUsed || b.ghost) return;
     B.abilT = 1.5 + Math.random() * 2.5;
@@ -336,6 +497,14 @@ export class Bots {
       case 21: if (want && total < th) { const v = others.filter(q => cer.isVoter(q) && q.crystals > 0 && this.trust(b, q) >= 0); if (v.length) t = [v[0].id]; } break;
       default: break;
     }
-    if (t) R.use(b, t);
+    if (t) {
+      if (m.dbg.botMode === 'human') {                              // Humanlike bots deliberate before revealing a card
+        const sig = `${b.roleId}:${m.phase}:${cer.seq}:${t.join()}`;
+        if (B.abilSig !== sig) { B.abilSig = sig; B.abilAt = m.time + this.think(); B.abilT = Math.max(0.05, B.abilAt - m.time); return; }
+        if (m.time < B.abilAt) { B.abilT = Math.max(0.05, B.abilAt - m.time); return; }
+        B.abilSig = null;
+      }
+      R.use(b, t);
+    }
   }
 }
