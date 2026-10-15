@@ -3,7 +3,7 @@
 //  All validation (range, tool requirements, co-op occupancy) happens here on
 //  the host. Clients only send "use <targetId>" / "release" intents.
 // ============================================================================
-import { TASKS, TASK_KEYS, TOOL_SPAWNS, TOOLS, ITEM_TYPES, RUNES, REAGENTS, ROOM_TAGS } from '../shared/tasks.js';
+import { TASKS, TASK_KEYS, TOOL_SPAWNS, TOOLS, ITEM_TYPES, RUNES, REAGENTS, ROOM_TAGS, BOT_MECHS } from '../shared/tasks.js';
 import { ECONOMY, INTERACT_RANGE, PHASE } from '../shared/constants.js';
 import { STEAM_VENTS, LARD_SPOTS, roomAt } from '../shared/map.js';
 import { EYE_H } from '../shared/physics.js';
@@ -37,6 +37,9 @@ export class TaskManager {
     this.active.clear(); this.items.clear(); this.coins.clear(); this.lard.clear(); this.respawnQ = [];
     this.bolted = false;
   }
+  /** Number of Humanlike bots that will be doing chores (0 when bots are not in that mode). */
+  botCrew() { return this.m.dbg.botMode === 'human' ? this.m.list.filter(p => p.isBot && !p.ghost).length : 0; }
+
   /** Hold duration after the debug multiplier. */
   need(sec) { return sec * (this.m.dbg.holdMul ?? 1); }
 
@@ -54,6 +57,14 @@ export class TaskManager {
       const coopActive = [...this.active.values()].filter(t => t.def.type !== 'solo').length;
       const wantCoop = coopActive < Math.max(2, Math.round(this.poolSize * 0.3));
       let cands = TASK_KEYS.filter(k => !activeKeys.has(k) && (k !== 'mop' || this.lard.size > 0));
+      // A bots-only crew must always have work it can really do (otherwise the tasks they refuse fill every slot and the
+      // match stalls — most visible with a small "max concurrent tasks"). Keep ≥40 % of the board bot-doable.
+      const crew = this.botCrew();
+      if (crew > 0) {
+        const doable = d => BOT_MECHS.has(d.mech) && (d.mech !== 'coop' || crew >= 2);        // a co-op chore needs two bots
+        const have = [...this.active.values()].filter(t => doable(t.def)).length;
+        if (have < Math.max(1, Math.round(this.poolSize * 0.4))) { const only = cands.filter(k => doable(TASKS[k])); if (only.length) cands = only; }
+      }
       const typed = cands.filter(k => (TASKS[k].type !== 'solo') === wantCoop);
       if (typed.length) cands = typed;
       if (!cands.length) return false;

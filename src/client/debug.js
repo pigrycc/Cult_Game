@@ -4,6 +4,7 @@
 // ============================================================================
 import { ROLES, FACTIONS, CURSES, MILESTONE_EVENTS, CURSE_KEYS, TIMER_LABELS, DEFAULT_TIMERS } from '../shared/constants.js';
 import { TASKS, TASK_KEYS } from '../shared/tasks.js';
+import { clearSavedMatchOverrides } from './overrides.js';
 
 // Configuration commands persisted to localStorage and re-applied automatically on the next start
 const PERSIST = new Set(['red_tick', 'freeze_red', 'yellow_mul', 'timescale', 'force_event', 'npc_config', 'debate_timer', 'max_concurrent',
@@ -32,17 +33,24 @@ export class DebugMenu {
     } else o[cmd] = a;
     saveDebugSettings(o);
   }
+  /** One click back to a normal match: live values AND the saved copy (so they don't return next start). */
+  resetOverrides() {
+    this.net.send({ t: 'debug', cmd: 'reset_overrides', a: {} });
+    saveDebugSettings(clearSavedMatchOverrides(loadDebugSettings()));
+    if (this.open) setTimeout(() => this.build(), 400);
+  }
   /** Re-apply every saved override (host only, once per session). */
   replaySaved(st) {
     if (this.replayed || !st.you.debug || !st.you.host) return;
     this.replayed = true;
     const o = loadDebugSettings(), keys = Object.keys(o);
     if (!keys.length) return;
+    const stale = keys.filter(k => ['freeze_red', 'timescale', 'yellow_mul', 'max_concurrent'].includes(k) || (k === 'debate_timer' && o[k].infinite));
     for (const k of keys) {
       if (k === 'spawn_bots' && st.phase !== 'LOBBY') continue;
       this.net.send({ t: 'debug', cmd: k, a: o[k] });
     }
-    this.net.send({ t: 'debug', cmd: 'note', a: { text: `Restored ${keys.length} saved debug setting(s)` } });
+    this.net.send({ t: 'debug', cmd: 'note', a: { text: `Restored ${keys.length} saved debug setting(s)${stale.length ? ' — including settings that change match length (see the orange strip)' : ''}` } });
   }
 
   playerOptions(includeNone = false) {

@@ -3,6 +3,7 @@ import { Match } from '../src/server/Match.js';
 import { PHASE, CER, ROLE_BY_ID, ROLES, roleCard, FACTION_OBJECTIVE } from '../src/shared/constants.js';
 import { BOT_NAMES } from '../src/server/Bots.js';
 import { Countdown, countdownSources } from '../src/client/countdown.js';
+import { matchAffectingOverrides, clearSavedMatchOverrides } from '../src/client/overrides.js';
 
 let fails = 0;
 const ok = (c, msg) => { if (!c) { fails++; console.log('FAIL', msg); } else console.log('ok  ', msg); };
@@ -249,5 +250,16 @@ function playCountdown({ total, rate = 1, packetHz = 10, fps = 60, mutate = null
     ok(mm.phase === PHASE.FINALE && Math.abs(t - eta) < 0.05, `collapse ETA predicts the explosion (predicted ${eta.toFixed(2)}s, took ${t.toFixed(2)}s)`);
   }
   m.dbg.freezeRed = true; ok(m.bars.collapseEta() === null && m.bars.serialize().eta === null, 'no ETA while the Red Bar is frozen'); }
+// --- forgotten debug overrides are made visible / can be reset in one go
+{ const none = matchAffectingOverrides({ freezeRed: false, debateInfinite: false, timeScale: 1, yellowMul: 1, maxConcurrent: null, workSec: null, holdMul: 1, redX: null });
+  ok(none.length === 0, 'a normal match shows no override warning');
+  const bad = matchAffectingOverrides({ freezeRed: true, debateInfinite: true, timeScale: 0.2, yellowMul: 0, maxConcurrent: 1, workSec: 600, holdMul: 5 });
+  ok(bad.length === 7 && bad.some(o => /endless debate/.test(o.label)) && bad.some(o => /impossible/.test(o.label)) && bad.some(o => /slow-motion/.test(o.label)), 'every match-stopping override is flagged (7 of 7)');
+  const saved = clearSavedMatchOverrides({ freeze_red: { on: true }, debate_timer: { infinite: true }, yellow_mul: { m: 0 }, timescale: { s: 8 }, max_concurrent: { n: 1 }, red_tick: {}, bot_mode: { mode: 'human' }, set_timers: { timers: { vote: 9 }, workSec: 600, holdMul: 5, debateSec: 99 } });
+  ok(!saved.freeze_red && !saved.debate_timer && !saved.yellow_mul && !saved.timescale && !saved.max_concurrent && !saved.set_timers.workSec && !saved.set_timers.holdMul && saved.bot_mode && saved.set_timers.timers.vote === 9, 'clearing saved overrides removes the match-stoppers but keeps unrelated settings (bots, timers)');
+  const { m, P } = mk(7);
+  Object.assign(m.dbg, { freezeRed: true, debateInfinite: true, yellowMul: 0, maxConcurrent: 1, workSec: 600, holdMul: 5, debateSec: 99 }); m.timeScale = 0.1;
+  m.debug.run(P(0), 'reset_overrides', {});
+  ok(!m.dbg.freezeRed && !m.dbg.debateInfinite && m.dbg.yellowMul === 1 && m.dbg.maxConcurrent === null && m.dbg.workSec === null && m.dbg.holdMul === 1 && m.dbg.debateSec === null && m.timeScale === 1, 'server "Reset to normal" restores every match-affecting value'); }
 console.log(fails ? `\n${fails} FAILED` : '\nALL RULE TESTS PASSED');
 process.exit(fails ? 1 : 0);

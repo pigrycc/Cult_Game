@@ -131,6 +131,10 @@ export const TASKS = {
              obj: P(-6.5, 29.6, 0), handleOff: 0.7, target: P(6.0, 36.2, 0), radius: 1.7 },
 };
 
+// Mechanics a Humanlike bot can perform for real (see server/Bots.js). The task spawner uses this to make sure a bots-only
+// crew always has something it CAN do on the board — otherwise tasks they refuse (carry, bell, bellows, …) pile up and jam it.
+export const BOT_MECHS = new Set(['hold', 'fetch', 'runes', 'coop']);
+
 export const TASK_KEYS = Object.keys(TASKS);
 export const COOP_KEYS = TASK_KEYS.filter(k => TASKS[k].type !== 'solo');
 export const SOLO_KEYS = TASK_KEYS.filter(k => TASKS[k].type === 'solo');
