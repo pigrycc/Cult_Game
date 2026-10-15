@@ -68,14 +68,20 @@ export class Roles {
     for (let i = 0; i < (r.targets || []).length; i++) {
       if (!this.validTarget(p, r.targets[i].filter, T[i])) return m.toast(p.id, `Invalid target for "${r.targets[i].label}".`, 'warn');
     }
+    this.m.toastTap = [];                                   // capture the public announcement the ability makes (= "what just happened")
     const err = this.apply(p, r, T);
+    const said = this.m.toastTap; this.m.toastTap = null;
     if (err) return m.toast(p.id, err, 'warn');
     p.cardUsed = true;
     p.roleRevealed = true;
     // RPC_BroadcastRoleRevealed(player_id, role_id)
     for (const q of m.list) m.send(q.id, { t: 'roleRevealed', id: p.id, roleId: r.id, name: p.name });
     m.fx('chime', { id: p.id });
-    m.log(`${p.name} revealed ${r.icon} ${r.name}.`);
+    // Game log, verbose: 1) what the revealed ability does, 2) how and on whom it was just used.
+    m.log(`${r.icon} ${r.name} — ${r.desc}`, 'role');
+    const on = T.filter(Boolean).map(t => t.name);
+    const outcome = said.length ? said.join(' ') : '';
+    m.log(`${p.name} revealed ${r.icon} ${r.name}${on.length ? ' and used it on ' + on.join(' and ') : ' and activated it'}${outcome ? ' — ' + outcome : '.'}`, 'ability');
   }
 
   apply(p, r, T) {

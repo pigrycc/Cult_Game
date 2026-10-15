@@ -96,6 +96,7 @@ export class GameServer {
         break;
       }
       case 'use': if (process.env.CRYPT_TRACE) this.log('[use]', p.name, msg.target, p.body.x.toFixed(2), p.body.z.toFixed(2), m.phase, p.frozen); this.use(p, String(msg.target || '')); break;
+      case 'logreq': m.send(p.id, { t: 'log', entries: m.publicLog }); break;
       case 'release': if (p.hold) m.releaseHold(p, 'cancel', true); break;
       case 'lmb': this.lmb(p, msg.target ? String(msg.target) : null); break;
       case 'drop':
@@ -230,7 +231,7 @@ export class GameServer {
       tally: m.tally, masterId: m.masterId, execId: m.execId,
       balance: { ...m.balance, threshold: m.cer.baseThreshold, players: m.players.size },
       lobby: m.phase === PHASE.LOBBY ? { count: m.players.size, min: MIN_PLAYERS, max: MAX_PLAYERS, canStart: m.canStart(), ips: lanIps(), port: this.port } : null,
-      log: m.publicLog.slice(-6),
+      log: m.publicLog.slice(-12), logN: m.logSeq || 0,
     };
     if (m.isDebugAllowed(v)) st.dbg = m.debug.serialize();
     return st;

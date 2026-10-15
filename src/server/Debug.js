@@ -41,6 +41,7 @@ export class Debug {
         return ok(`Bots: ${m.list.filter(q => q.isBot).length}`);
       }
       case 'bot_delay': m.dbg.botDecisionDelaySeconds = Math.max(0, Math.min(10, +a.s)); return ok(`Humanlike reaction delay: ${m.dbg.botDecisionDelaySeconds}s (±33%)`);
+      case 'chaos_on_explode': m.dbg.destabilizationTriggersChaosWin = !!a.on; return ok(`Red Bar destabilisation = ${a.on ? 'CHAOS VICTORY' : 'everyone loses (default)'}`);
       case 'bot_chat': m.dbg.botChat = !!a.on; return ok(`Bot banter ${a.on ? 'ON' : 'OFF'}`);
       case 'bot_speed': m.dbg.botSpeed = Math.max(0.1, Math.min(4, +a.m || 1)); return ok(`Bot movement speed ×${m.dbg.botSpeed}`);
       case 'disable_sprint': m.dbg.noSprint = !!a.on; return ok(`Sprint (Shift) ${a.on ? 'DISABLED' : 'enabled'} for everyone`);
@@ -117,7 +118,7 @@ export class Debug {
       case 'teleport': if (target && isFinite(+a.x) && isFinite(+a.z)) { Object.assign(target.body, { x: +a.x, y: 0, z: +a.z, vx: 0, vy: 0, vz: 0 }); m.send(target.id, { t: 'teleport', x: +a.x, z: +a.z, yaw: target.body.yaw }); ok(`${target.name} teleported (keeps held tool)`); } return;
       case 'note': return ok(String(a.text || '').slice(0, 120));
       case 'reset_overrides': {
-        Object.assign(m.dbg, { freezeRed: false, debateInfinite: false, debateSec: null, yellowMul: 1, maxConcurrent: null, workSec: null, holdMul: 1, redX: null, redT: 1.5 });
+        Object.assign(m.dbg, { destabilizationTriggersChaosWin: false, freezeRed: false, debateInfinite: false, debateSec: null, yellowMul: 1, maxConcurrent: null, workSec: null, holdMul: 1, redX: null, redT: 1.5 });
         m.timeScale = 1;
         return ok('Match-affecting overrides reset to normal');
       }
@@ -130,7 +131,7 @@ export class Debug {
     const d = this.m.dbg;
     return {
       freezeRed: d.freezeRed, redX: d.redX, redT: d.redT, yellowMul: d.yellowMul, debateSec: d.debateSec, debateInfinite: d.debateInfinite,
-      maxConcurrent: d.maxConcurrent, mutinyThreshold: d.mutinyThreshold, forcedEvent: d.forcedEvent, botMode: d.botMode, botSpeed: d.botSpeed, botDecisionDelaySeconds: d.botDecisionDelaySeconds, botChat: d.botChat, noSprint: d.noSprint, shoveDropPct: d.shoveDropPct,
+      maxConcurrent: d.maxConcurrent, mutinyThreshold: d.mutinyThreshold, forcedEvent: d.forcedEvent, botMode: d.botMode, botSpeed: d.botSpeed, botDecisionDelaySeconds: d.botDecisionDelaySeconds, botChat: d.botChat, destabilizationTriggersChaosWin: !!d.destabilizationTriggersChaosWin, noSprint: d.noSprint, shoveDropPct: d.shoveDropPct,
       timeScale: this.m.timeScale, debugAll: d.debugAll, forcedNpcs: d.forcedNpcs,
       timers: this.m.timers, workSec: d.workSec, holdMul: d.holdMul, extendedCurses: d.extendedCurses, workDefault: this.m.balance.work, debateDefault: this.m.balance.debate,
     };

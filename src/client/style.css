@@ -44,6 +44,8 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .tbTitle { font-weight: bold; color: #ffcf66; margin-bottom: 4px; letter-spacing: 1px; }
 .tbRow { margin: 3px 0; }
 .tbRow.coop { color: #9ff4ff; }
+.tbSw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; box-shadow: 0 0 6px currentColor; vertical-align: -1px; }
+.tbTool { font-size: 11px; }
 .tbTag { color: #c8b890; font-size: 11px; }
 .tbType { font-size: 11px; opacity: .85; }
 .tbCoin { color: #ffd34d; }
@@ -185,8 +187,21 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .finIcon { font-size: 90px; } .finTitle { font-size: 46px; font-weight: bold; } .finReason { font-size: 17px; margin: 10px 0; } .finTally { font-size: 26px; margin: 10px; }
 .finTable { margin: 10px auto; border-collapse: collapse; font-size: 14px; } .finTable td, .finTable th { padding: 3px 12px; border-bottom: 1px solid #3a2a1a; text-align: left; }
 .finLog { font-size: 12px; opacity: .7; margin: 8px 0 14px; }
-#score { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); background: rgba(12,9,7,.93); border: 1px solid #8a6a3a; border-radius: 8px; padding: 14px 18px; min-width: 520px; }
-#score td { padding: 2px 10px; font-size: 14px; } .logBox { font-size: 12px; opacity: .75; margin-top: 8px; max-height: 120px; overflow: hidden; }
+#score { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); display: flex; gap: 14px; align-items: stretch; width: min(1180px, 96vw); max-height: 78vh; z-index: 8; }
+#score.hidden { display: none; }
+.scWin { background: rgba(12,9,7,.93); border: 1px solid #8a6a3a; border-radius: 8px; padding: 12px 16px; overflow: auto; }
+#scPlayers { flex: 0 0 52%; } #scRight { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; }
+.scWin h3 { margin: 0 0 6px; color: #ffcf66; letter-spacing: 1px; font-size: 15px; }
+#score td { padding: 2px 8px; font-size: 14px; vertical-align: middle; }
+#score .scSub { font-size: 12px; opacity: .8; margin-top: 8px; }
+#scLog { flex: 1 1 auto; overflow-y: auto; min-height: 220px; max-height: 60vh; font-size: 12.5px; line-height: 1.35; padding-right: 6px; }
+#scLog .lg { padding: 2px 0 2px 6px; border-left: 3px solid #4a3a28; margin: 2px 0; opacity: .9; }
+#scLog .lg b.t { color: #a89878; font-weight: normal; margin-right: 6px; font-family: Consolas, monospace; }
+#scLog .lg.role { border-color: #ffd75e; color: #ffe9a8; background: rgba(255,215,94,.06); font-style: italic; }
+#scLog .lg.ability { border-color: #ff9de2; color: #ffd0f0; }
+#scLog .lg.ceremony { border-color: #8a7bff; } #scLog .lg.task { border-color: #5ac48a; } #scLog .lg.end { border-color: #ff5a1a; color: #ffb48a; font-weight: bold; }
+#scDbg { font-size: 12px; padding: 4px 10px; margin-bottom: 8px; text-align: center; background: rgba(60,38,0,.92); border: 1px solid #ffb02e; border-radius: 10px; color: #ffe0a0; }
+#scDbg button { font-size: 11px; padding: 1px 8px; margin-left: 8px; background: #7a4a14; border-color: #ffcf66; }
 #debug { position: fixed; top: 60px; right: 10px; width: 470px; max-height: calc(100vh - 80px); overflow: auto; background: rgba(18,18,24,.96); border: 1px solid #5a6a8a; border-radius: 4px; font: 12px Consolas, monospace; color: #d0d8e8; padding: 6px 10px; z-index: 30; }
 #debug .dbgHead { font-weight: bold; color: #8ad8ff; margin-bottom: 4px; } #debug .dbgHead span { font-weight: normal; opacity: .6; }
 #debug details { border-top: 1px solid #333a4a; padding: 4px 0; } #debug summary { cursor: pointer; color: #ffcf66; font-weight: bold; }
@@ -208,8 +223,6 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 #debug .tgrid input { width: 60px; }
 
 /* ---------- avatars, error banner, misc ---------- */
-#dbgWarn { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); max-width: 820px; padding: 3px 10px; font-size: 12px; text-align: center; background: rgba(60,38,0,.92); border: 1px solid #ffb02e; border-radius: 12px; color: #ffe0a0; pointer-events: auto; z-index: 5; }
-#dbgWarn button { font-size: 11px; padding: 1px 8px; margin-left: 8px; background: #7a4a14; border-color: #ffcf66; }
 .collapseWarn { color: #ff5a4a; font-weight: bold; animation: pulse .5s infinite alternate; }
 .avc { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; margin: 0 2px; }
 .av { position: relative; display: inline-block; width: 26px; height: 26px; border-radius: 50% 50% 42% 42%; background: var(--c); box-shadow: inset 0 -4px 0 rgba(0,0,0,.25), 0 0 6px #000; }

@@ -29,6 +29,10 @@ export const TOOLS = {
   bellow: { name: 'Hand Bellows',       color: '#8b5a2b' },
 };
 
+/** One distinct colour per active task (index stored on the task). Markers, required tools and task items all share it. */
+export const TASK_PALETTE = ['#ff5252', '#40c4ff', '#ffd740', '#69f0ae', '#e040fb', '#ff9100', '#18ffff', '#b2ff59', '#ff80ab', '#8c9eff', '#ffffff', '#a1887f'];
+export const TASK_COLORS = TASK_PALETTE.length;
+
 export const TOOL_SPAWNS = [
   { id: 'broom1', type: 'broom', x: 5.6, z: -8.4, y: 0 },
   { id: 'broom2', type: 'broom', x: 20.2, z: -14.8, y: 0 },

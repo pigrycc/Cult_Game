@@ -26,7 +26,7 @@ function audit(m) {
   const rd = T.repDone.bind(T);
   T.repDone = (i, p) => { out.steps++; if (p?.isBot && i.def.tool && T.heldToolType(p) !== i.def.tool) out.viol.push(`${p.name} advanced ${i.key} empty-handed`); rd(i, p); };
   const bc = T.botComplete.bind(T);
-  T.botComplete = (p, i) => { const r = bc(p, i); if (r) { out.steps++; if (i.def.tool && T.heldToolType(p) !== i.def.tool) out.viol.push(`${p.name} completed ${i.key} empty-handed`); } return r; };
+  T.botComplete = (p, i) => { const held = T.heldToolType(p); const r = bc(p, i); if (r) { out.steps++; if (i.def.tool && held !== i.def.tool) out.viol.push(`${p.name} completed ${i.key} empty-handed`); } return r; };
   return out;
 }
 const bump = (m, key) => { m.dbg.maxConcurrent = 0; for (const t of [...m.tasks.active.values()]) m.tasks.removeTask(t); m.tasks.respawnQ = []; return m.tasks.spawnTask(key); };

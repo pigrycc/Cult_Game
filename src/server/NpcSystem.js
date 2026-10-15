@@ -154,13 +154,7 @@ export class NpcSystem {
     const n = this.npcs.get(p.carryingNpc);
     if (!n) { p.carryingNpc = null; return; }
     if (this.m.phase === PHASE.WORK) {
-      if (dist2(p.body, PORTAL) < 7) {
-        const used = new Set(this.altar().map(a => a.spot));
-        const spot = [0, 1, 2, 3].find(i => !used.has(i));
-        this.placeAltar(n, spot); p.carryingNpc = null;
-        const left = 2 - this.altar().length;
-        this.m.toast(p.id, left > 0 ? `Captive placed on the altar. ${left} more to bring.` : 'Both captives are on the altar. Keep working!');
-      } else this.dropCarried(p, false);
+      if (!this.deliverToAltar(p, n)) this.dropCarried(p, false);
       return;
     }
     if (this.m.phase === PHASE.CEREMONY && this.m.cer.sub === CER.EXECUTION && p.id === this.m.execId) {
@@ -169,12 +163,28 @@ export class NpcSystem {
     }
   }
 
+  /** Anywhere in the Main Hall (Central Sanctuary) counts as the drop zone — no need to hit an exact trigger by the portal. */
+  inMainHall(p) { return roomAt(p.body.x, p.body.z) === 'sanctuary' || dist2(p.body, PORTAL) < 7; }
+
+  /** Work phase: the Master puts a captive down inside the Main Hall → it is registered on the altar. */
+  deliverToAltar(p, n) {
+    if (this.m.phase !== PHASE.WORK || !this.inMainHall(p)) return false;
+    const used = new Set(this.altar().map(a => a.spot));
+    const spot = [0, 1, 2, 3].find(i => !used.has(i));
+    if (spot === undefined) return false;
+    this.placeAltar(n, spot); p.carryingNpc = null;
+    const left = 2 - this.altar().length;
+    this.m.toast(p.id, left > 0 ? `Captive delivered to the altar. ${left} more to bring.` : 'Both captives are on the altar. Keep working!');
+    return true;
+  }
+
   placeAltar(n, spot) { const s = ALTAR_SPOTS[spot ?? 0]; Object.assign(n, { state: 'altar', x: s.x, y: 0.4, z: s.z, carrier: null, spot: spot ?? 0 }); }
 
   dropCarried(p, toAltar) {
     const n = this.npcs.get(p.carryingNpc); p.carryingNpc = null;
     if (!n) return;
     if (toAltar && this.m.phase === PHASE.CEREMONY) { this.placeAltar(n, this.altar().length); return; }
+    if (!toAltar && this.deliverToAltar(p, n)) return;   // dropped anywhere in the Main Hall = delivered
     Object.assign(n, { state: 'ground', x: p.body.x - Math.sin(p.body.yaw) * 0.8, y: 0.3, z: p.body.z - Math.cos(p.body.yaw) * 0.8, carrier: null });
   }
 

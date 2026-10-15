@@ -30,6 +30,7 @@ async function connect(url, name, token) {
     errorFlash: m => { ui.errorFlash(m.text); audio.sfx('buzz'); },
     fx: m => game.onFx(m),
     chat: m => ui.chat(m, welcome.id),
+    log: m => ui.setFullLog(m.entries || []),
     label: m => ui.label(m.id, m.text, m.color, m.dur),
     roleRevealed: m => { const r = ROLE_BY_ID[m.roleId]; ui.toast(`🔔 ${m.name} revealed ${r.icon} ${r.name}!`, 'role'); audio.sfx('chime'); },
     recipe: m => ui.recipeCard(m),

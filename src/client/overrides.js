@@ -10,13 +10,14 @@ export function matchAffectingOverrides(d = {}) {
   if (d.maxConcurrent != null) out.push({ key: 'maxConcurrent', label: `📋 max ${d.maxConcurrent} task(s) on the board` });
   if (d.workSec != null) out.push({ key: 'workSec', label: `🛠 work phase pace ${d.workSec}s` });
   if (d.holdMul != null && Math.abs(d.holdMul - 1) > 0.01) out.push({ key: 'holdMul', label: `✋ hold time ×${d.holdMul}` });
+  if (d.destabilizationTriggersChaosWin) out.push({ key: 'destabilizationTriggersChaosWin', label: '🔮 Red Bar milestone = Chaos victory (no explosion)' });
   if (d.redX != null) out.push({ key: 'redX', label: '🔴 custom Red Bar tick' });
   return out;
 }
 
 /** Saved-settings keys (see debug.js) that must be cleared together with the live overrides. */
 export function clearSavedMatchOverrides(saved) {
-  for (const k of ['freeze_red', 'debate_timer', 'yellow_mul', 'timescale', 'max_concurrent', 'red_tick']) delete saved[k];
+  for (const k of ['freeze_red', 'debate_timer', 'yellow_mul', 'timescale', 'max_concurrent', 'red_tick', 'chaos_on_explode']) delete saved[k];
   if (saved.set_timers) { for (const k of ['workSec', 'holdMul', 'debateSec']) delete saved.set_timers[k]; }
   return saved;
 }

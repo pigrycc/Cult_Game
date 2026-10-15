@@ -10,7 +10,7 @@ const matCache = new Map();
 export function mat(color, opts = {}) {
   const key = color + JSON.stringify(opts);
   if (!opts.unique && matCache.has(key)) return matCache.get(key);
-  const m = opts.basic ? new THREE.MeshBasicMaterial({ color, transparent: !!opts.transparent, opacity: opts.opacity ?? 1, depthWrite: opts.depthWrite ?? true, blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending, side: opts.side ?? THREE.FrontSide })
+  const m = opts.basic ? new THREE.MeshBasicMaterial({ color, transparent: !!opts.transparent, opacity: opts.opacity ?? 1, depthWrite: opts.depthWrite ?? true, depthTest: opts.depthTest ?? true, blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending, side: opts.side ?? THREE.FrontSide })
     : new THREE.MeshStandardMaterial({ color, roughness: opts.rough ?? 0.85, metalness: opts.metal ?? 0, emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.ei ?? 1, flatShading: opts.flat ?? true, transparent: !!opts.transparent, opacity: opts.opacity ?? 1, side: opts.side ?? THREE.FrontSide });
   if (!opts.unique) matCache.set(key, m);
   return m;
@@ -216,6 +216,16 @@ export function makeMarker(color) {
   const d = mesh(new THREE.OctahedronGeometry(0.11), m); g.add(d);
   const ring = mesh(G.torus(0.2, 0.018, 4, 16), mat(color, { basic: true, transparent: true, opacity: 0.6 })); ring.rotation.x = Math.PI / 2; ring.position.y = -0.3; g.add(ring);
   g.userData.diamond = d; g.userData.ring = ring;
+  return g;
+}
+
+/** Bigger "pick me up" beacon floating above a tool / task item: spinning diamond over a down-pointing arrow. Drawn through walls. */
+export function makeToolMarker(color) {
+  const g = new THREE.Group();
+  const m = mat(color, { basic: true, transparent: true, opacity: 0.95, depthTest: false });
+  const d = mesh(new THREE.OctahedronGeometry(0.17), m); d.position.y = 0.3; d.renderOrder = 20; g.add(d);
+  const arrow = mesh(G.cone(0.13, 0.28, 4), m); arrow.rotation.x = Math.PI; arrow.position.y = 0.0; arrow.renderOrder = 20; g.add(arrow);
+  g.userData.diamond = d; g.userData.arrow = arrow;
   return g;
 }
 

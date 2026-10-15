@@ -44,6 +44,7 @@ export class Ceremony {
     const isFinal = milestoneNum >= m.bars.M;
     this.eventKey = isFinal ? 'FINAL' : (m.dbg.forcedEvent || m.track[milestoneNum - 1] || 'EMPTY');
     this.chaosSacrificed = false; this.lastSacrifice = null;
+    m.log(`Milestone ${milestoneNum}/${m.bars.M} reached — the ceremony begins (event: ${eventNameOf(this.eventKey)}).`, 'ceremony');
     m.setPhase(PHASE.CEREMONY);
     for (const p of m.list) { p.gagged = false; m.releaseHold(p, 'silent'); }
     m.bigAll('Well Done — Execution in 3 sec', `Milestone ${milestoneNum}/${m.bars.M} reached • The Red Bar is frozen`, 3, '#ffe28a');
@@ -58,7 +59,7 @@ export class Ceremony {
    */
   pause(summary, next) {
     const b = +this.m.timers.phaseTransitionBufferSeconds || 0;
-    this.m.log(`${summary.icon || ''} ${summary.title}${summary.lines?.length ? ' — ' + summary.lines.join('; ') : ''}`);
+    this.m.log(`${summary.icon || ''} ${summary.title}${summary.lines?.length ? ' — ' + summary.lines.join('; ') : ''}`, 'ceremony');
     if (b <= 0) { this.summary = null; return next(); }
     this.summary = summary; this.after = next;
     this.setSub(CER.RESULT, b, summary.kind || null);
@@ -186,7 +187,7 @@ export class Ceremony {
     m.execId = id;
     this.eminence = byEminence;
     m.fx('nominate', { id });
-    m.log(`${this.M?.name} nominated ${t.name} as Executioner${byEminence ? ' (Grey Eminence)' : ''}.`);
+    m.log(`${this.M?.name} nominated ${t.name} as Executioner${byEminence ? ' (Grey Eminence)' : ''}.`, 'ceremony');
     this.setSub(CER.VOTE, m.timers.vote);
     const by = byEminence && byEminence !== true ? byEminence : this.M;
     const pair = [m.av(by), m.av(t)];
@@ -297,7 +298,7 @@ export class Ceremony {
     this.grantAltarVision(newMaster);
     m.fx('rebellion');
     m.bigAll('REBELLION SUCCEEDS!', `${total}/${th} crystals • ${newMaster.name} seizes the ceremonial staff. The old duo is spared exhaustion.`, 3.5, '#ff5c5c');
-    m.log(`Rebellion succeeded (${total}/${th}). ${newMaster.name} is the new Master.`);
+    m.log(`Rebellion succeeded (${total}/${th}). ${newMaster.name} is the new Master.`, 'ceremony');
     // Swap places: old master into the circle, new master to the centre
     if (oldMaster) m.teleport(oldMaster, newMaster.body.x, newMaster.body.z, newMaster.body.yaw);
     m.teleport(newMaster, MASTER_SPOT.x, MASTER_SPOT.z, 0);
@@ -620,7 +621,7 @@ export class Ceremony {
   end() {
     const m = this.m;
     m.applyExhaustion(this.presidingMaster, m.execId);
-    m.log(`Ceremony ${this.milestone} ended.`);
+    m.log(`Ceremony ${this.milestone} ended.`, 'ceremony');
     m.execId = null;
     this.sub = null; this.mode = null;
     for (const p of m.list) { p.frozen = false; p.blind = false; if (p.carryingPlayer) { const v = m.P(p.carryingPlayer); if (v) v.carriedBy = null; p.carryingPlayer = null; } }
@@ -680,3 +681,5 @@ export class Ceremony {
     };
   }
 }
+
+function eventNameOf(k) { return MILESTONE_EVENTS[k]?.name ?? k; }
