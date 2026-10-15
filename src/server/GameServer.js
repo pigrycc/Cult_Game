@@ -196,7 +196,7 @@ export class GameServer {
         master: p.id === m.masterId, exec: p.id === m.execId, exhausted: !!p.exhausted, muted: p.muted, gagged: p.gagged,
         fumes: p.fumesT > 0, key: p.hasKey, ward: !!p.immuneChaos, publicNot: p.publicNot || null, rider: p.rider, ridingOn: p.ridingOn, carriedBy: p.carriedBy,
         tool: p.heldTool ? m.tasks.tools.get(p.heldTool)?.type : null, item: p.heldItem ? m.tasks.items.get(p.heldItem)?.type : null,
-        load: p.load?.type || null, npc: p.carryingNpc, talking: p.lastVoice && m.time - p.lastVoice < 0.4,
+        load: p.load?.type || null, npc: p.carryingNpc, talking: p.lastVoice && m.time - p.lastVoice < 0.35,
         role: p.roleRevealed || god || p.id === v.id ? p.roleId : null,
         roleUsed: p.roleRevealed ? p.cardUsed : undefined,
       };

@@ -1,12 +1,14 @@
 // ============================================================================
-//  AUDIO — synthesized SFX + push-to-talk VOIP.
+//  AUDIO — synthesized SFX + proximity VOIP (open mic with voice-activity detection; push-to-talk optional).
 //  Voice: mic → 16 kHz Int16 PCM frames → host. The HOST computes per-listener
 //  gain (3D proximity + wall occlusion + intercom pipes during Work; global in
 //  ceremonies; muted/gagged speakers are dropped) and forwards frames.
 //  Toxic-fumes speakers arrive flagged and are played back garbled.
 // ============================================================================
+import { VoiceGate } from './vad.js';
+
 export class Audio {
-  constructor() { this.ctx = null; this.mic = null; this.ptt = false; this.next = new Map(); this.onFrame = null; this.level = 0; }
+  constructor() { this.ctx = null; this.mic = null; this.mode = (typeof localStorage !== 'undefined' && localStorage.getItem('crypt_voice_mode')) || 'open'; this.muted = false; this.ptt = false; this.silenced = false; this.speaking = false; this.gate = new VoiceGate(); this.next = new Map(); this.onFrame = null; this.level = 0; }
 
   ensure() {
     if (!this.ctx) {
@@ -95,12 +97,20 @@ export class Audio {
       const ratio = ctx.sampleRate / 16000;
       proc.onaudioprocess = e => {
         const inp = e.inputBuffer.getChannelData(0);
-        let lvl = 0; for (let i = 0; i < inp.length; i += 16) lvl = Math.max(lvl, Math.abs(inp[i]));
-        this.level = lvl;
-        if (!this.ptt || !this.onFrame) return;
+        let sum = 0; for (let i = 0; i < inp.length; i++) sum += inp[i] * inp[i];
+        const rms = Math.sqrt(sum / inp.length), ms = inp.length / ctx.sampleRate * 1000;
+        this.level = rms;
         const n = Math.floor(inp.length / ratio), out = new Int16Array(n);
         for (let i = 0; i < n; i++) { const v = inp[Math.floor(i * ratio)]; out[i] = Math.max(-1, Math.min(1, v)) * 32767; }
-        this.onFrame(out.buffer);
+        // OPEN MIC (default): voice-activity detection with a noise gate. PUSH-TO-TALK (optional): key held.
+        // Cursed / gagged minions transmit nothing (the server enforces it as well).
+        const allowed = !this.muted && !this.silenced && !!this.onFrame;
+        let frames = [];
+        if (!allowed) this.gate.reset();
+        else if (this.mode === 'ptt') frames = this.ptt ? [out] : [];
+        else frames = this.gate.push(rms, ms, out);
+        this.speaking = allowed && frames.length > 0;
+        for (const f of frames) this.onFrame(f.buffer);
       };
       const mute = ctx.createGain(); mute.gain.value = 0;
       src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);

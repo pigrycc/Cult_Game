@@ -19,6 +19,7 @@ async function connect(url, name, token) {
   audio.ensure();
   ui.hideMenu();
   game = new Game({ net, ui, audio, myId: welcome.id });
+  game.startVoice();                                  // open mic from the start (the Host/Join click is the user gesture)
   game.debug = new DebugMenu(net);
   game.debug.aimTarget = () => game.target?.id;
   window.__game = game; // exposed for automated smoke tests

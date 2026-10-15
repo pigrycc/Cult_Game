@@ -285,7 +285,7 @@ export class UI {
       if (m) html += `<div class="cpTitle">${m}</div>`;
       if ((c.mode === 'eye' && st.execId === you.id) || (c.mode === 'abyss' && st.masterId === you.id) || (c.mode === 'initiation' && you.leader)) html += '<div class="cpNote big">Walk up to a minion and strike them (LMB)</div>';
     } else if (c.sub === CER.DEBATE) {
-      html += `<div class="cpTitle">DEBATE — New Hazard in ${c.infinite ? '∞' : Math.ceil(c.t) + 's'}</div><div class="cpNote">Global voice [V] & chat [Enter] in the Sanctuary.${c.lastSacrifice ? ` Sacrificed: ${FACTION_INFO[c.lastSacrifice.faction].icon} ${FACTION_INFO[c.lastSacrifice.faction].short} • ${CURSES[c.lastSacrifice.curse].name}` : ''}</div>${c.lastSacrifice?.resolution ? `<div class="cpNote resLine">↳ ${esc(c.lastSacrifice.resolution)}</div>` : ''}`;
+      html += `<div class="cpTitle">DEBATE — New Hazard in ${c.infinite ? '∞' : Math.ceil(c.t) + 's'}</div><div class="cpNote">Global voice (open mic) & chat [Enter] in the Sanctuary.${c.lastSacrifice ? ` Sacrificed: ${FACTION_INFO[c.lastSacrifice.faction].icon} ${FACTION_INFO[c.lastSacrifice.faction].short} • ${CURSES[c.lastSacrifice.curse].name}` : ''}</div>${c.lastSacrifice?.resolution ? `<div class="cpNote resLine">↳ ${esc(c.lastSacrifice.resolution)}</div>` : ''}`;
     } else if (c.sub === CER.RESULT && c.summary) {
       const s = c.summary;
       html += `<div class="sumCard">${s.glyph ? `<div class="sumGlyph">${glyphSVG(s.glyph.faction, s.glyph.curse, 64)}</div>` : ''}<div class="sumIcon">${s.icon || ''}</div>
@@ -365,7 +365,7 @@ export class UI {
     if (p.master) top.push(STATUS_ICONS.master); if (p.exec) top.push(STATUS_ICONS.exec);
     if (p.exhausted) top.push(STATUS_ICONS.exhausted); if (p.muted) top.push(STATUS_ICONS.muted); if (p.gagged) top.push(STATUS_ICONS.gagged);
     if (p.fumes) top.push(STATUS_ICONS.fumes); if (p.ghost) top.push(STATUS_ICONS.ghost); if (p.key) top.push(STATUS_ICONS.key); if (p.ward) top.push(`<span title="Chaos Ward — immune to Chaos">${STATUS_ICONS.ward}</span>`);
-    if (p.talking) top.push('🔊');
+    if (p.talking) top.unshift('<span class="pTalk" title="speaking">🔊</span>');
     let pre = '';
     if (p.faction && p.id !== you.id) pre = FACTION_INFO[p.faction].icon + (p.leader ? '👑' : '') + ' ';        // God Mode
     else if (p.pact === 'blood') pre = '🩸 ';                                                                    // Blood Pact
@@ -394,7 +394,7 @@ export class UI {
     const held = p.tool ? TOOLS[p.tool]?.name : p.item ? ITEM_TYPES[p.item]?.name : p.npc ? 'a bound captive' : null;
     const cardState = p.roleUsed === undefined ? '(hidden from others)' : p.roleUsed ? 'card used — face up' : 'card re-armed — face down';
     return `${bubble ? `<div class="bubble">${esc(bubble)}</div>` : ''}${extraLabel ? `<div class="pLabel" style="color:${extraLabel.color}">${esc(extraLabel.text)}</div>` : ''}
-      <div class="pCard"><div class="pcName"><span style="color:${p.color}">●</span> ${esc(p.name)} <span class="pCry">💎${p.crystals}</span></div>
+      ${p.talking ? '<div class="pTop"><span class="pTalk" title="speaking">🔊</span></div>' : ''}<div class="pCard"><div class="pcName"><span style="color:${p.color}">●</span> ${esc(p.name)} <span class="pCry">💎${p.crystals}</span></div>
       <div class="pcRole">${r ? `${r.icon} <b>${esc(r.name)}</b> <small>(${cardState})</small><div class="pDesc">${esc(roleCard(r.id, { threshold: st.balance.threshold }).text)}</div>` : '🂠 Role: hidden — card not revealed yet'}</div>
       <div class="pcFac">${this.factionLine(p, st)}</div>
       ${stat.length || held ? `<div class="pcStat">${stat.join(' • ')}${held ? `${stat.length ? ' • ' : ''}✋ ${esc(held)}` : ''}</div>` : ''}</div>`;
@@ -443,7 +443,7 @@ export class UI {
     render();
   }
   recipeCard(msg) {
-    this.modal(`<h3>📜 Recipe Scroll</h3><p>Dictate this through the intercom pipe on the wall (stand next to it and talk [V] / chat [Enter]):</p>
+    this.modal(`<h3>📜 Recipe Scroll</h3><p>Dictate this through the intercom pipe on the wall (stand next to it and just talk / chat [Enter]):</p>
       <div class="recipe">${msg.names.map((n, i) => `<div>${msg.recipe[i]} scoop${msg.recipe[i] === 1 ? '' : 's'} of <b>${n}</b></div>`).join('')}</div>`);
   }
   runes(msg, onChoose) {
@@ -474,6 +474,20 @@ export class UI {
     const b = $('#toLobby'); if (b) b.onclick = onLobby;
   }
   hideFinale() { $('#finale').classList.add('hidden'); }
+
+  /** Small microphone status chip (bottom centre-left): open / speaking / muted / silenced by a curse. */
+  updateMic(audio, st) {
+    const el = $('#micChip'); if (!el) return;
+    const inLobby = st.phase === PHASE.LOBBY;
+    let txt, cls;
+    if (!audio.mic) { txt = '🎤 mic off'; cls = 'off'; }
+    else if (audio.silenced) { txt = st.you.gagged ? '🔇 gagged — silenced' : '🤐 cursed — silenced'; cls = 'bad'; }
+    else if (audio.muted) { txt = '🔇 muted (V)'; cls = 'off'; }
+    else if (audio.mode === 'ptt') { txt = audio.ptt ? '🎙 transmitting' : '🎙 push-to-talk (hold V)'; cls = audio.ptt ? 'live' : 'idle'; }
+    else { txt = audio.speaking ? '🔊 speaking' : '🎤 open mic'; cls = audio.speaking ? 'live' : 'idle'; }
+    const key = txt + cls + inLobby;
+    if (el.dataset.k !== key) { el.dataset.k = key; el.textContent = txt; el.className = cls; }
+  }
 
   // ------------------------------------------------------------------ game log (merged from incremental state updates)
   mergeLog(st, game) {
