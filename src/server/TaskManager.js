@@ -40,6 +40,36 @@ export class TaskManager {
   /** Number of Humanlike bots that will be doing chores (0 when bots are not in that mode). */
   botCrew() { return this.m.dbg.botMode === 'human' ? this.m.list.filter(p => p.isBot && !p.ghost).length : 0; }
 
+  /** Can a Humanlike bot crew of this size really perform this chore? (co-op needs two bots) */
+  botDoable(def, crew = this.botCrew()) { return BOT_MECHS.has(def.mech) && (def.mech !== 'coop' || crew >= 2); }
+
+  /**
+   * Self-heal: the board is full, bots are the crew, and NOTHING on it is something they can do (for example the
+   * "max tasks" limit was lowered mid-match and a chore they refuse is left in the only slot). Retire the oldest chore
+   * nobody has touched so a doable one can spawn. A task a player is working on is never removed.
+   */
+  unjam(dt) {
+    this.unjamT = (this.unjamT ?? 0) - dt;
+    if (this.unjamT > 0) return;
+    this.unjamT = 3;
+    const crew = this.botCrew();
+    if (!crew || this.poolSize < 1 || this.active.size === 0 || this.active.size < this.poolSize) return;
+    const all = [...this.active.values()];
+    if (all.some(t => this.botDoable(t.def, crew))) return;
+    const idle = all.filter(t => t.progress === 0 && t.rep === 0 && t.participants.size === 0 && this.m.time - t.born > 15
+      && !this.m.list.some(p => p.hold?.uid === t.uid || p.carryHandle?.uid === t.uid) && !(t.data.holders && t.data.holders.some(Boolean)));
+    if (!idle.length) return;
+    idle.sort((a, b) => a.born - b.born);
+    // retire enough untouched chores to open one slot in a single pass (a new chore only spawns once the board is below its limit)
+    let n = 0;
+    while (idle.length && this.active.size >= this.poolSize) {
+      const victim = idle.shift();
+      this.m.log(`The crypt shuffles its chores: "${victim.def.name}" was retired (no minion could take it).`);
+      this.removeTask(victim); n++;
+    }
+    if (n) this.respawnQ.push(0.5);
+  }
+
   /** Hold duration after the debug multiplier. */
   need(sec) { return sec * (this.m.dbg.holdMul ?? 1); }
 
@@ -61,7 +91,7 @@ export class TaskManager {
       // match stalls — most visible with a small "max concurrent tasks"). Keep ≥40 % of the board bot-doable.
       const crew = this.botCrew();
       if (crew > 0) {
-        const doable = d => BOT_MECHS.has(d.mech) && (d.mech !== 'coop' || crew >= 2);        // a co-op chore needs two bots
+        const doable = d => this.botDoable(d, crew);
         const have = [...this.active.values()].filter(t => doable(t.def)).length;
         if (have < Math.max(1, Math.round(this.poolSize * 0.4))) { const only = cands.filter(k => doable(TASKS[k])); if (only.length) cands = only; }
       }
@@ -502,6 +532,7 @@ export class TaskManager {
 
   // ---------------------------------------------------------------- tick
   tick(dt) {
+    this.unjam(dt);
     // respawns
     for (let i = this.respawnQ.length - 1; i >= 0; i--) {
       this.respawnQ[i] -= dt;

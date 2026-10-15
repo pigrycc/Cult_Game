@@ -229,11 +229,22 @@ for (const cap of [1, 2, 3]) for (const players of [5, 8]) {
   const r = fullGame({ players, maxConcurrent: cap, freeze: true });
   ok(r.done && r.min <= 30, `board limited to ${cap} task(s), Red Bar frozen, ${players} players: still finishes (${r.min.toFixed(1)} min)${r.done ? '' : ' — STUCK with [' + r.pool + ']'}`);
 }
-{ // with a 1-task board the single task must always be one the bots can actually do
-  const { m } = world({ bots: 5 }); m.dbg.maxConcurrent = 1; m.dbg.freezeRed = true; let bad = 0, checks = 0;
+{ // The jam: a small board must never be left holding only chores the crew refuses.
   const refused = new Set(['carry', 'bell', 'bellows', 'stack', 'relay', 'carcass', 'calib', 'books']);
-  for (let i = 0; i < 6000; i++) { m.tick(0.05); if (i % 20 === 0 && m.tasks.active.size) { checks++; if ([...m.tasks.active.values()].some(t => refused.has(t.def.mech))) bad++; } }
-  ok(checks > 50 && bad === 0, `with a 1-task board it is always a chore the bots can do (${bad} bad of ${checks} snapshots)`); }
+  const scan = (m, ticks) => { let bad = 0, checks = 0; for (let i = 0; i < ticks; i++) { m.tick(0.05); if (i % 20 === 0 && m.tasks.active.size) { checks++; if ([...m.tasks.active.values()].some(t => refused.has(t.def.mech))) bad++; } } return { bad, checks }; };
+  // (a) cap in force from the start: EVERY snapshot must be doable — repeated, because the spawner is random
+  let strictBad = 0, strictChecks = 0;
+  for (let r = 0; r < 6; r++) { const { m } = world({ bots: 5 }); m.dbg.freezeRed = true; for (const t of [...m.tasks.active.values()]) m.tasks.removeTask(t); m.tasks.respawnQ = []; m.dbg.maxConcurrent = 1; m.tasks.fillPool(); const s = scan(m, 3000); strictBad += s.bad; strictChecks += s.checks; }
+  ok(strictChecks > 200 && strictBad === 0, `1-task board from the start (6 games): always a chore the bots can do (${strictBad} bad of ${strictChecks} snapshots)`);
+  // (b) cap lowered mid-match: a refused chore already on the board used to sit in the only slot forever (a jam).
+  //     The board now heals itself: it must settle on bot-doable work every time, and then stay that way.
+  let settled = 0; const N = 12;
+  for (let r = 0; r < N; r++) { const { m } = world({ bots: 5 }); m.dbg.freezeRed = true; m.dbg.maxConcurrent = 1; scan(m, 1500); let stuck = 0; for (let i = 0; i < 2400; i++) { m.tick(0.05); if (i % 20 === 0 && m.tasks.active.size >= 1 && ![...m.tasks.active.values()].some(t => m.tasks.botDoable(t.def))) stuck++; } if (stuck <= 8) settled++; }
+  ok(settled === N, `cap lowered mid-match: the board heals within seconds (≤8 s with only refused chores) (${settled}/${N} games)`);
+  // (c) worst case for the heal: the only slot holds a refused chore the moment the bots take over — it must be retired within ~20 s
+  const { m } = world({ bots: 5 }); m.dbg.freezeRed = true; m.dbg.maxConcurrent = 1; for (const t of [...m.tasks.active.values()]) m.tasks.removeTask(t); m.tasks.respawnQ = []; m.tasks.spawnTask('carcass');
+  const t = run(m, 60, 0.05, () => ![...m.tasks.active.values()].some(i => refused.has(i.def.mech)) && m.tasks.active.size === 1);
+  ok(t < 25, `a refused chore stuck in a 1-slot board is retired and replaced after ${t.toFixed(0)} s`); }
 { // humans still get the full variety: with NO bots the spawner is unrestricted
   const m = new Match({ send: () => {} }); const hid = m.addPlayer({ name: 'H', isHost: true }).id; for (let i = 0; i < 4; i++) m.addPlayer({ name: 'P' + i });
   m.startGame(hid); m.phaseT = 0; m.tick(0.016); const seen = new Set();
