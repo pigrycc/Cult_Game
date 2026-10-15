@@ -23,6 +23,7 @@ import { NpcSystem } from './NpcSystem.js';
 import { Ceremony } from './Ceremony.js';
 import { Roles } from './Roles.js';
 import { Bots } from './Bots.js';
+import { BotChat } from './BotChat.js';
 import { Debug } from './Debug.js';
 import { shuffle, pick, dist2, garble } from './util.js';
 
@@ -44,7 +45,7 @@ export class Match {
       debugAll: !!opts.debugAll, freezeRed: false, redX: null, redT: 1.5, yellowMul: 1,
       debateSec: null, debateInfinite: false, maxConcurrent: null, mutinyThreshold: null,
       forcedEvent: null, forcedNpcs: null, forcedDuo: null, botMode: 'roamer',
-      workSec: null, holdMul: 1, extendedCurses: false, botSpeed: 1, noSprint: false, shoveDropPct: 30,
+      workSec: null, holdMul: 1, extendedCurses: false, botDecisionDelaySeconds: 2.25, botChat: true, botSpeed: 1, noSprint: false, shoveDropPct: 30,
       forceFaction: new Map(), forceRole: new Map(),
     };
     this.bars = new ProgressBars(this);
@@ -53,6 +54,7 @@ export class Match {
     this.cer = new Ceremony(this);
     this.roles = new Roles(this);
     this.bots = new Bots(this);
+    this.botChat = new BotChat(this);
     this.debug = new Debug(this);
     this.balance = getBalance(MIN_PLAYERS);
     this.track = MILESTONE_TRACKS[5];
@@ -87,7 +89,7 @@ export class Match {
       hold: null, holdT: 0, heldTool: null, heldItem: null, load: null,
       carryingNpc: null, carryingPlayer: null, carriedBy: null, ridingOn: null, rider: null,
       carryHandle: null, shoveCd: 0, blind: false, wasAir: false, frozen: false,
-      chatQ: [],
+      chatQ: [], obs: { idle: 0, total: 0, tasks: 0, bails: 0, lastBail: null },
     };
     p.body.yaw = 0; // lobby: face the mirror (north)
     this.players.set(id, p);
@@ -151,6 +153,7 @@ export class Match {
     this.track = MILESTONE_TRACKS[this.balance.milestones];
     this.dealIdentities();
     this.bars.reset(this.balance.milestones);
+    this.botChat.reset();
     this.tally = { fire: 0, blood: 0, chaos: 0 };
     this.sacrificeLog = []; this.winner = null; this.ceremonyIndex = 0; this.exhaustedQueue = [];
     this.setPhase(PHASE.REVEAL, this.timers.revealBack + this.timers.revealFront + 0.8);
@@ -232,9 +235,15 @@ export class Match {
     for (const p of this.list) {
       if (!p.isBot && this.time - p.lastInputAt > 0.15) this.simulate(p, { fwd: 0, strafe: 0, yaw: p.body.yaw, pitch: p.body.pitch }, dt);
       p.shoveCd = Math.max(0, p.shoveCd - dt);
+      if (this.phase === PHASE.WORK && !p.ghost && p.obs) {
+        const busy = p.hold || p.heldItem || p.heldTool || p.load || p.carryHandle || p.carryingNpc || p.ridingOn || p.rider || p.frozen;
+        p.obs.total += dt;
+        if (!busy && Math.hypot(p.body.vx, p.body.vz) < 0.4) p.obs.idle += dt;
+      }
       if (p.fumesT > 0) { p.fumesT -= dt; if (p.fumesT > 0 && Math.random() < dt * 0.06 && p.body.ragdoll <= 0 && !p.frozen) this.ragdoll(p, 1.1, 2.5); }
     }
     this.bots.tick(dt);
+    this.botChat.tick();
     this.updateAttachments();
 
     switch (this.phase) {
@@ -385,10 +394,16 @@ export class Match {
   buck(p) { if (p.rider) { const r = this.P(p.rider); if (r) this.dismount(r, true); } }
 
   /** End a hold-to-interact. reason: 'done' | 'cancel' | 'silent' — the client plays matching feedback. */
-  releaseHold(p, reason = 'cancel') {
+  releaseHold(p, reason = 'cancel', voluntary = false) {
     if (p.hold && reason !== 'silent' && !p.isBot) this.send(p.id, { t: 'holdEnd', reason, target: p.hold.target });
+    // walking away from a half-done task on purpose is something other minions notice (bot suspicion banter)
+    if (p.hold && voluntary && p.obs && p.hold.uid && p.holdT > 1.0) {
+      p.obs.bails++; p.obs.lastBail = this.tasks.active.get(p.hold.uid)?.def.name ?? null;
+    }
     p.hold = null; p.holdT = 0;
   }
+  /** Per-round observation counters (what other minions could have seen). */
+  resetObs(p) { p.obs = { idle: 0, total: 0, tasks: 0, bails: 0, lastBail: null }; }
 
   releaseAll(p) {
     this.releaseHold(p, 'silent');
@@ -444,6 +459,7 @@ export class Match {
       }
       if (ch) this.send(l.id, { t: 'chat', from: p.id, name: p.name, text: shown, ch });
     }
+    this.botChat.onChat(p, text);                     // bots that get named may answer
   }
 
   /** Proximity + wall-occlusion + intercom routing (shared by text & voice). */
@@ -501,6 +517,7 @@ export class Match {
       carryingNpc: null, carryingPlayer: null, carriedBy: null, ridingOn: null, rider: null, carryHandle: null,
       known: new Map(), knownNpcs: new Set(), botWorking: false, lastVoice: 0, chatQ: [],
     });
+    this.resetObs(p);
     if (clearIdentity) Object.assign(p, { faction: null, origFaction: null, roleId: null });
     Object.assign(p.body, { vx: 0, vy: 0, vz: 0, ragdoll: 0, spin: 0, onGround: true });
     if (p.isBot) this.bots.adopt(p);                         // fresh behaviour state
@@ -511,7 +528,7 @@ export class Match {
     this.locked = false;
     this.phase = PHASE.LOBBY;
     this.tasks.clearAll(); this.npcs.reset(); this.cer.reset();
-    this.bars.reset(this.bars.M);
+    this.bars.reset(this.bars.M); this.botChat.reset();
     for (const p of this.list) if (p.disconnected) this.players.delete(p.id);   // players who left mid-match
     this.list.forEach((p, i) => {
       this.resetPlayerState(p, { clearIdentity: true });

@@ -97,7 +97,7 @@ export class TaskManager {
     if (!this.active.has(inst.uid)) return;
     const coins = COIN_BY_TYPE[inst.def.type];
     const names = [];
-    for (const p of participants) { if (!p) continue; p.gold += coins; names.push(p.name); this.m.send(p.id, { t: 'coins', amount: coins }); }
+    for (const p of participants) { if (!p) continue; p.gold += coins; names.push(p.name); if (p.obs) p.obs.tasks++; this.m.send(p.id, { t: 'coins', amount: coins }); }
     const pos = this.mainPoint(inst);
     this.m.fx('taskdone', { x: pos.x, y: pos.y, z: pos.z, name: inst.def.name });
     this.m.log(`${inst.def.name} done by ${names.join(', ')}`);
@@ -107,6 +107,31 @@ export class TaskManager {
     this.m.bars.addTaskProgress(1);
   }
   forceComplete(inst, participants = []) { this.complete(inst, participants); }
+
+  // ---------------------------------------------------------------- bot support
+  heldToolType(p) { return p.heldTool ? this.tools.get(p.heldTool)?.type ?? null : null; }
+
+  /**
+   * Mechanical bar for scripted (abstract) bot work: a bot can neither make progress on, nor complete,
+   * a task whose tool it is not holding. Returns false (and changes nothing) when it is empty-handed.
+   */
+  botMayWork(p, inst) { return !inst.def.tool || this.heldToolType(p) === inst.def.tool; }
+  botComplete(p, inst) {
+    if (!this.botMayWork(p, inst)) return false;
+    this.complete(inst, [p]);
+    return true;
+  }
+
+  /** Nearest tool of `type` that nobody is holding. */
+  nearestFreeTool(type, from) {
+    let best = null, bd = Infinity;
+    for (const t of this.tools.values()) {
+      if (t.type !== type || t.heldBy) continue;
+      const d = dist2(from, t);
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best;
+  }
 
   // ---------------------------------------------------------------- items & tools
   makeItem(type, x, y, z, taskUid = null) {

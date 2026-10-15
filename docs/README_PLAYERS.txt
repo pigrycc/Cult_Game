@@ -14,6 +14,12 @@ JOIN A GAME
   Over the internet: the host forwards TCP port 7777 on the router, or everybody uses a
   virtual LAN (Tailscale / ZeroTier / Radmin VPN / Hamachi) and joins the host's VPN IP.
 
+HUMANLIKE BOTS
+  Debug console → Bot Behaviour → "Humanlike". They fetch tools from the racks before using them, wait a moment
+  before voting / nominating / picking captives / playing role cards (slider: "Humanlike reaction delay"), and they
+  TALK: nomination reactions, accusations in the debate, defending themselves and bluffing when it suits them.
+  Don't believe everything they say.
+
 PLAY SOLO (bots)
   Host → in the lobby press F1 → "Spawn Bot Count" 4..10 → Apply → [START GAME].
   Bot behaviour (F1): Idle / Random Task Roamer / Ceremony Auto-Voter.

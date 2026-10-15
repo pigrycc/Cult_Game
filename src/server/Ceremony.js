@@ -197,6 +197,7 @@ export class Ceremony {
     }
     m.appoint(t, 'exec', by);
     this.nominatedBy = by?.id ?? null;
+    m.botChat.onNomination(this.M, t, by);
     return true;
   }
 
@@ -368,6 +369,7 @@ export class Ceremony {
     m.tally[n.faction]++;
     m.npcs.rejectRemaining();
     this.lastSacrifice = { faction: n.faction, curse: n.curse, id: n.id };
+    m.botChat.onSacrifice(n);
     m.sacrificeLog.push({ milestone: this.milestone, faction: n.faction, curse: n.curse, master: this.M?.name, exec: this.E?.name });
     if (n.faction === FACTIONS.CHAOS) this.chaosSacrificed = true;
     for (const p of m.list) if (p.muted && p.mutedSince < m.ceremonyIndex) p.muted = false;  // muteness lasts until the next sacrifice
@@ -611,6 +613,7 @@ export class Ceremony {
     const m = this.m;
     const dur = m.dbg.debateSec ?? m.balance.debate;
     this.setSub(CER.DEBATE, dur);
+    m.botChat.onDebateStart();
     m.bigAll('DEBATE', 'Global voice in the Sanctuary • Justify, accuse, plan. New hazards when the timer ends.', 3, '#ffe28a');
   }
 

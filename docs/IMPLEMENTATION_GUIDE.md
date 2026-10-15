@@ -61,7 +61,7 @@ debate seconds, mutiny threshold, work-phase length and exhaustion count per pla
 `MILESTONE_TRACKS` holds the 5/6/7 event tracks; `DEFAULT_TIMERS` every ceremony timer.
 
 ## 4b. Automated checks
-`npm run test:rules` (103 rule assertions incl. lobby purge, effective-crystal tie-break, countdown logic, ETA accuracy) · `node tools/bot-master-test.mjs` (Master bots fetch two captives) · `npm run test:sim` (full bot match) · `tools/ui-smoke*.cjs` (headless-Chromium UI checks; need `PLAYWRIGHT_MODULE` and `CHROME_PATH`).
+`npm run test:rules` (103 rule assertions incl. lobby purge, effective-crystal tie-break, countdown logic, ETA accuracy) · `node tools/bot-master-test.mjs` (Master bots fetch two captives) · `node tools/bot-ai-test.mjs` (every task with a Humanlike bot incl. tool audit, reaction delays, banter/bluff rules) · `npm run test:sim` (full bot match) · `tools/ui-smoke*.cjs` (headless-Chromium UI checks; need `PLAYWRIGHT_MODULE` and `CHROME_PATH`).
 
 ## 5. Testing checklist (solo, with the F1 console)
 1. Lobby → spawn 6 bots → START. Card back → flip → FPP.

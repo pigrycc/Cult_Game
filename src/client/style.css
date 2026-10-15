@@ -135,15 +135,17 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 @keyframes glow { from { box-shadow: 0 0 6px #ffd75e; } to { box-shadow: 0 0 22px #ffd75e; } }
 .rcIcon { font-size: 30px; } .rcName { font-weight: bold; color: #ffcf66; } .rcState { font-size: 11px; opacity: .85; }
 .rcWhen { font-size: 11px; color: #9ff4ff; border-bottom: 1px solid #4a3a2a; padding-bottom: 4px; margin-bottom: 2px; }
+.rcWhen b { color: #ffe28a; letter-spacing: .5px; }
 .rcText { font-size: 12px; margin: 3px 0; line-height: 1.3; }
-.rcObj { display: none; font-size: 11px; text-align: left; margin-top: 6px; padding: 5px 6px; border-top: 2px solid var(--fc); background: rgba(0,0,0,.35); border-radius: 0 0 6px 6px; }
-.rcObj b { color: var(--fc); letter-spacing: 1px; }
+.rcObj { display: none; position: absolute; left: -50px; right: 0; bottom: calc(100% + 8px); font-size: 12px; text-align: left; padding: 8px 10px; border: 2px solid var(--fc); background: rgba(14,10,8,.96); border-radius: 8px; box-shadow: 0 0 14px var(--fc); }
+.rcObj b { display: block; color: var(--fc); letter-spacing: 1px; margin-bottom: 2px; }
 .roleCard:hover .rcObj { display: block; }
 #keysHelp { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); font-size: 11px; opacity: .55; white-space: nowrap; }
 
 /* ---------- reveal ---------- */
 #reveal { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity .7s; z-index: 10; }
-.cardWrap { position: relative; width: 320px; height: 500px; perspective: 1200px; }
+.cardWrap { position: relative; width: 320px; height: 470px; perspective: 1200px; }
+@media (max-height: 800px) { .cardWrap { height: 400px; width: 280px; } .rIcon { font-size: 60px !important; } .revealTitle { margin-top: 44px !important; font-size: 28px !important; } }
 .card { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 1s cubic-bezier(.3,.1,.2,1); }
 .card.flipped { transform: rotateY(180deg); }
 .face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 16px; border: 3px solid #c8a040; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px; }
@@ -152,12 +154,13 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .runes { letter-spacing: 8px; color: #c8a040; margin-top: 18px; font-size: 22px; }
 .face.front { background: linear-gradient(#f2e6c4, #c8b088); color: #2a1a0a; transform: rotateY(180deg); }
 .rWhen { font-size: 13px; font-weight: bold; color: #5a3010; text-align: center; border-bottom: 1px solid #8a6a3a; padding-bottom: 8px; margin-bottom: 6px; }
-.rObj { margin-top: auto; font-size: 12px; text-align: center; padding: 8px; border-top: 3px solid var(--fc); background: rgba(40,20,5,.12); border-radius: 0 0 10px 10px; width: 100%; }
-.rObj b { color: var(--fc); letter-spacing: 1px; }
+.objBanner { width: 440px; max-width: 92vw; margin-bottom: 14px; padding: 9px 14px; text-align: center; border: 2px solid var(--fc); border-radius: 10px; background: rgba(14,10,8,.92); box-shadow: 0 0 22px var(--fc); font-size: 14px; line-height: 1.3; }
+.objBanner b { display: block; color: var(--fc); letter-spacing: 2px; font-size: 13px; margin-bottom: 3px; }
+.rWhen b { color: #8a2a00; letter-spacing: .5px; }
 .rIcon { font-size: 80px; } .rName { font-size: 28px; font-weight: bold; margin: 6px 0; text-align: center; } .rNum { font-size: 12px; opacity: .6; }
 .rDesc { font-size: 15px; text-align: center; margin-top: 10px; line-height: 1.35; }
 .cardGlow { position: absolute; left: 10%; right: 10%; bottom: -40px; height: 40px; filter: blur(30px); opacity: .9; border-radius: 50%; }
-.revealTitle { font-size: 34px; margin-top: 60px; letter-spacing: 3px; font-weight: bold; }
+.revealTitle { font-size: 34px; margin-top: 52px; letter-spacing: 3px; font-weight: bold; }
 .revealSub { margin-top: 8px; font-size: 17px; max-width: 520px; text-align: center; }
 .pulse { animation: pulse 1s infinite alternate; } @keyframes pulse { from { opacity: .35; } to { opacity: 1; } }
 .revealTimer { margin-top: 8px; opacity: .7; }

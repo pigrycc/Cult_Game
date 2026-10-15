@@ -63,10 +63,10 @@ export class UI {
     const f = FACTION_INFO[msg.faction], r = ROLE_BY_ID[msg.roleId];
     const el = $('#reveal'); el.classList.remove('hidden'); el.style.opacity = 1;
     el.innerHTML = `
+      <div class="objBanner" style="--fc:${f.color}"><b>FACTION OBJECTIVE ${f.icon}</b><span>${esc(FACTION_OBJECTIVE[msg.faction])}</span></div>
       <div class="cardWrap"><div class="card" id="rcard">
         <div class="face back" style="--glow:${f.color}"><div class="crest">${f.icon}</div><div class="runes">ᚠ ᚢ ᚦ ᚨ ᚱ</div></div>
-        <div class="face front">${(() => { const c = roleCard(r.id, msg); return `<div class="rWhen">⏳ ${esc(c.when)}</div><div class="rIcon">${r.icon}</div><div class="rName">${esc(r.name)}</div><div class="rDesc">${esc(c.text)}</div>
-          <div class="rObj" style="--fc:${f.color}"><b>FACTION OBJECTIVE</b> ${f.icon}<br>${esc(FACTION_OBJECTIVE[msg.faction])}</div>`; })()}</div>
+        <div class="face front">${(() => { const c = roleCard(r.id, msg); return `<div class="rWhen"><b>WHEN TO USE:</b> ${esc(c.when)}</div><div class="rIcon">${r.icon}</div><div class="rName">${esc(r.name)}</div><div class="rDesc">${esc(c.text)}</div>`; })()}</div>
       </div><div class="cardGlow" style="background:${f.color}"></div></div>
       <div class="revealTitle" id="rTitle" style="color:${f.color}">${f.name.toUpperCase()}</div>
       <div class="revealSub pulse" id="rSub">Press any key to reveal role</div>
@@ -206,11 +206,11 @@ export class UI {
         <div class="held">${held ? '✋ ' + esc(held) + (me?.load ? ' + ' + esc(ITEM_TYPES[me.load]?.name) : '') + ' <span class="k">[Q]</span>' : ''}</div>
         <div class="statuses">${statuses.map(s => `<span>${s}</span>`).join('')}</div>
         <div id="roleCard" class="roleCard ${you.cardUsed ? 'used' : ''} ${usable ? 'usable' : ''}">
-          <div class="rcWhen">⏳ ${esc(card.when)}</div>
+          <div class="rcObj" style="--fc:${f.color}"><b>FACTION OBJECTIVE ${f.icon}</b><span>${esc(FACTION_OBJECTIVE[you.faction])}</span></div>
+          <div class="rcWhen"><b>WHEN TO USE:</b> ${esc(card.when)}</div>
           <div class="rcIcon">${r.icon}</div><div class="rcName">${esc(r.name)}</div>
           <div class="rcText">${esc(card.text)}</div>
           <div class="rcState">${you.cardUsed ? 'USED (face up)' : usable ? '▶ READY — press [G]' : esc(you.ability.reason || 'face down')}</div>
-          <div class="rcObj" style="--fc:${f.color}"><b>FACTION OBJECTIVE</b> ${f.icon} ${esc(FACTION_OBJECTIVE[you.faction])}</div>
         </div>`;
       if (bb.dataset.h !== bbHtml) { bb.dataset.h = bbHtml; bb.innerHTML = bbHtml; $('#roleCard').onclick = () => game.useAbility(); }
     }
@@ -418,7 +418,7 @@ export class UI {
       if (!step) { this.closeModal(); onConfirm(chosen); return; }
       const others = st.players.filter(p => !p.ghost);
       const cc = roleCard(role.id, { threshold: st.balance.threshold });
-      const m = this.modal(`<h3>${role.icon} ${esc(role.name)}</h3><p><small>⏳ ${esc(cc.when)}</small><br>${esc(cc.text)}</p><h4>${chosen.length + 1}/${role.targets.length}: ${esc(step.label)}</h4>
+      const m = this.modal(`<h3>${role.icon} ${esc(role.name)}</h3><p><small><b>WHEN TO USE:</b> ${esc(cc.when)}</small><br>${esc(cc.text)}</p><h4>${chosen.length + 1}/${role.targets.length}: ${esc(step.label)}</h4>
         <div class="plist">${others.map(p => `<button class="pbtn" data-id="${p.id}" ${chosen.includes(p.id) && step.filter !== 'any' ? 'disabled' : ''}><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''} 💎${p.crystals}</button>`).join('')}</div>`);
       m.querySelectorAll('.pbtn').forEach(b => b.onclick = () => { chosen.push(+b.dataset.id); render(); });
     };
