@@ -3,7 +3,7 @@
 //  All validation (range, tool requirements, co-op occupancy) happens here on
 //  the host. Clients only send "use <targetId>" / "release" intents.
 // ============================================================================
-import { TASKS, TASK_KEYS, TOOL_SPAWNS, TOOLS, ITEM_TYPES, RUNES, REAGENTS, ROOM_TAGS, BOT_MECHS } from '../shared/tasks.js';
+import { TASKS, TASK_KEYS, TOOL_SPAWNS, TOOLS, ITEM_TYPES, RUNES, REAGENTS, ROOM_TAGS, BOT_MECHS, TASK_COLORS } from '../shared/tasks.js';
 import { ECONOMY, INTERACT_RANGE, PHASE } from '../shared/constants.js';
 import { STEAM_VENTS, LARD_SPOTS, roomAt } from '../shared/map.js';
 import { EYE_H } from '../shared/physics.js';
@@ -104,7 +104,11 @@ export class TaskManager {
     }
     const def = TASKS[key];
     if (key === 'mop' && !this.lard.size) this.addLard();
-    const inst = { uid: UID++, key, def, rep: 0, progress: 0, participants: new Set(), data: {}, born: this.m.time };
+    // Every active task gets its own colour (lowest free palette slot); all its markers, tools and items share it.
+    const usedC = new Set([...this.active.values()].map(t => t.color));
+    let color = 0; while (usedC.has(color) && color < TASK_COLORS - 1) color++;
+    if (usedC.has(color)) color = UID % TASK_COLORS;
+    const inst = { uid: UID++, key, def, rep: 0, progress: 0, participants: new Set(), data: {}, born: this.m.time, color };
     switch (def.mech) {
       case 'fetch':
         if (def.srcs) inst.data.items = def.srcs.map(s => this.makeItem(def.item, s.x, s.y ?? 0.1, s.z, inst.uid).id);
@@ -141,8 +145,14 @@ export class TaskManager {
     for (const p of participants) { if (!p) continue; p.gold += coins; names.push(p.name); if (p.obs) p.obs.tasks++; this.m.send(p.id, { t: 'coins', amount: coins }); }
     const pos = this.mainPoint(inst);
     this.m.fx('taskdone', { x: pos.x, y: pos.y, z: pos.z, name: inst.def.name });
-    this.m.log(`${inst.def.name} done by ${names.join(', ')}`);
+    this.m.log(`${inst.def.name} done by ${names.join(', ')}`, 'task');
     if (inst.def.lard && inst.data.lardId) this.lard.delete(inst.data.lardId);
+    // Put the tool down as soon as the job is finished, so nobody wanders off to another room with it.
+    if (inst.def.tool) for (const p of participants) {
+      if (p && p.heldTool && this.tools.get(p.heldTool)?.type === inst.def.tool) {
+        const nm = TOOLS[inst.def.tool].name; this.dropTool(p); this.m.toast(p.id, `Job done — you put the ${nm} down.`);
+      }
+    }
     this.removeTask(inst, 'done');
     this.respawnQ.push(this.m.timers.taskRespawnDelay);
     this.m.bars.addTaskProgress(1);
@@ -648,6 +658,7 @@ export class TaskManager {
   serializeTasks() {
     return [...this.active.values()].map(inst => ({
       uid: inst.uid, key: inst.key, name: inst.def.name, room: inst.def.room, tag: ROOM_TAGS[inst.def.room], type: inst.def.type,
+      color: inst.color, tool: inst.def.tool || undefined,
       coins: COIN_BY_TYPE[inst.def.type], progress: +inst.progress.toFixed(3), rep: inst.rep, reps: inst.def.reps || 1,
       points: this.points(inst).map(q => ({ ...q, x: +q.x.toFixed(2), y: +(q.y ?? 1).toFixed(2), z: +q.z.toFixed(2) })),
       rune: inst.def.mech === 'runes' ? inst.data.rune : undefined, wall: inst.def.wall,
@@ -658,7 +669,7 @@ export class TaskManager {
   serializeWorld() {
     return {
       tools: [...this.tools.values()].map(t => ({ id: t.id, type: t.type, x: +t.x.toFixed(2), y: t.y, z: +t.z.toFixed(2), heldBy: t.heldBy })),
-      items: [...this.items.values()].map(i => ({ id: i.id, type: i.type, x: +i.x.toFixed(2), y: +i.y.toFixed(2), z: +i.z.toFixed(2), heldBy: i.heldBy, wild: !!i.wild, step: i.step })),
+      items: [...this.items.values()].map(i => ({ id: i.id, type: i.type, x: +i.x.toFixed(2), y: +i.y.toFixed(2), z: +i.z.toFixed(2), heldBy: i.heldBy, wild: !!i.wild, step: i.step, task: i.taskUid })),
       coins: [...this.coins.values()],
       lard: [...this.lard.values()],
       door: { open: this.coldDoorOpen(), bolted: this.bolted },

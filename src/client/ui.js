@@ -4,7 +4,7 @@
 //  finale & scoreboard.
 // ============================================================================
 import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS, roleCard, FACTION_OBJECTIVE } from '../shared/constants.js';
-import { TOOLS, ITEM_TYPES, RUNES } from '../shared/tasks.js';
+import { TOOLS, ITEM_TYPES, RUNES, TASK_PALETTE } from '../shared/tasks.js';
 import { matchAffectingOverrides } from './overrides.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -170,7 +170,7 @@ export class UI {
     const tb = $('#taskBoard'); tb.style.display = st.phase === PHASE.WORK || st.phase === PHASE.CEREMONY ? '' : 'none';
     if (st.tasks) {
       tb.innerHTML = `<div class="tbTitle">ACTIVE CRYPT TASKS:</div>` + st.tasks.map(t =>
-        `<div class="tbRow ${t.type !== 'solo' ? 'coop' : ''}"><span class="tbTag">[${t.tag}]</span> ${esc(t.name)} <span class="tbType">[${t.type === 'solo' ? '👤 SOLO' : t.type === 'coop3' ? '👥👤 CO-OP×3' : '👥 CO-OP'}]</span> <span class="tbCoin">(+${t.coins}💰)</span>${t.progress > 0 ? `<div class="tbProg"><div style="width:${t.progress * 100}%"></div></div>` : ''}</div>`).join('');
+        `<div class="tbRow ${t.type !== 'solo' ? 'coop' : ''}"><span class="tbSw" style="background:${TASK_PALETTE[t.color] || '#fff'}"></span><span class="tbTag">[${t.tag}]</span> ${esc(t.name)}${t.tool ? ` <span class="tbTool" style="color:${TASK_PALETTE[t.color] || '#fff'}">🔧 ${esc(TOOLS[t.tool]?.name || t.tool)}</span>` : ''} <span class="tbType">[${t.type === 'solo' ? '👤 SOLO' : t.type === 'coop3' ? '👥👤 CO-OP×3' : '👥 CO-OP'}]</span> <span class="tbCoin">(+${t.coins}💰)</span>${t.progress > 0 ? `<div class="tbProg"><div style="width:${t.progress * 100}%"></div></div>` : ''}</div>`).join('');
     }
     // --- lobby info
     const li = $('#lobbyInfo');
@@ -229,12 +229,10 @@ export class UI {
     document.body.classList.toggle('drunk', !inLobby && you.fumes > 0);
     $('#ghostTint').style.opacity = !inLobby && you.ghost ? 0.25 : 0;
     // --- forgotten debug overrides that change how long a match lasts
-    const dw = $('#dbgWarn'), ov = st.dbg && inMatch ? matchAffectingOverrides({ ...st.dbg, timeScale: st.dbg.timeScale }) : [];
-    if (ov.length) {
-      const html = `⚠ Debug overrides active: ${ov.map(o => esc(o.label)).join(' · ')} <button id="dbgReset">Reset to normal</button>`;
-      if (dw.dataset.h !== html) { dw.dataset.h = html; dw.innerHTML = html; $('#dbgReset').onclick = () => game.debug.resetOverrides(); }
-      dw.classList.remove('hidden');
-    } else { dw.classList.add('hidden'); dw.dataset.h = ''; }
+    this.dbgOverrides = st.dbg && inMatch ? matchAffectingOverrides({ ...st.dbg, timeScale: st.dbg.timeScale }) : [];
+    this.dbgGame = game;
+    this.mergeLog(st, game);
+    if (this.scoreOpen) this.scoreboard(true, st);
     // --- debug panel data
     if (game.debug) game.debug.update(st);
   }
@@ -477,13 +475,57 @@ export class UI {
   }
   hideFinale() { $('#finale').classList.add('hidden'); }
 
+  // ------------------------------------------------------------------ game log (merged from incremental state updates)
+  mergeLog(st, game) {
+    this.logs ||= []; this.logLast ||= 0;
+    if (this.logPhase === PHASE.LOBBY && st.phase !== PHASE.LOBBY) this.logs = [];     // a new match starts with an empty log
+    this.logPhase = st.phase;
+    if (st.logN < this.logLast) { this.logs = []; this.logLast = 0; }
+    const inc = st.log || [];
+    if (inc.length && inc[0].n > this.logLast + 1 && this.logLast < st.logN && !this.logPending) {   // we missed some lines → ask for the whole log
+      this.logPending = true; game?.net?.send({ t: 'logreq' });
+    }
+    for (const e of inc) if (e.n > this.logLast) { this.logs.push(e); this.logLast = e.n; }
+    if (this.logs.length > 400) this.logs.splice(0, this.logs.length - 400);
+  }
+  setFullLog(entries) {
+    this.logs = entries.slice(-400); this.logLast = Math.max(this.logLast || 0, entries.length ? entries[entries.length - 1].n : 0); this.logPending = false;
+    if (this.scoreOpen) this.scoreboard(true, this.dbgGame?.st);
+  }
+
+  /** TAB overlay: two windows side by side — players & roles (left), scrollable game log (right). */
   scoreboard(show, st) {
     const el = $('#score');
-    if (!show || !st) { el.classList.add('hidden'); return; }
-    el.classList.remove('hidden');
-    el.innerHTML = `<h3>Minions</h3><table>${st.players.map(p => `<tr><td><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.bot ? '🤖' : ''}</td><td>${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''}${p.muted ? '🤐' : ''}${p.ghost ? '👻' : ''}${p.key ? '🗝️' : ''}</td><td>💎${p.crystals}</td><td>${p.role ? ROLE_BY_ID[p.role].icon + ' ' + esc(ROLE_BY_ID[p.role].name) : '🂠'}</td><td>${p.publicNot ? 'not ' + FACTION_INFO[p.publicNot].icon : ''}</td></tr>`).join('')}</table>
-      <div class="small">Altar: 🔥${st.tally.fire} 🩸${st.tally.blood} 🔮${st.tally.chaos} • Rebellion threshold ${st.balance.threshold} 💎 • ${st.milestones} milestones</div>
-      <div class="logBox">${st.log.map(l => `<div>${esc(l.text)}</div>`).join('')}</div>`;
+    if (!show || !st) { this.scoreOpen = false; el.classList.add('hidden'); return; }
+    const wasHidden = el.classList.contains('hidden');
+    this.scoreOpen = true; el.classList.remove('hidden');
+    const meP = st.players.find(p => p.id === st.you.id);
+    const facTxt = p => {
+      if (p.faction) return `<span style="color:${FACTION_INFO[p.faction].color}">${FACTION_INFO[p.faction].icon} ${FACTION_INFO[p.faction].short}</span>`;
+      if (p.known) return `<span style="color:${FACTION_INFO[p.known]?.color || '#ccc'}" title="you know this">${FACTION_INFO[p.known]?.icon || ''} ${FACTION_INFO[p.known]?.short || ''}</span>`;
+      if (p.pact) return '<span title="Blood pact">🩸 Blood</span>';
+      return p.publicNot ? `<span class="small">not ${FACTION_INFO[p.publicNot].icon}</span>` : '<span class="small">?</span>';
+    };
+    const players = `<h3>MINIONS</h3><table><tr class="small"><th></th><th>Status</th><th>💎</th><th>Role</th><th>Cult</th></tr>${st.players.map(p => `<tr${p.id === st.you.id ? ' style="background:rgba(255,215,94,.08)"' : ''}><td><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.bot ? '🤖' : ''}</td><td>${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''}${p.muted ? '🤐' : ''}${p.ghost ? '👻' : ''}${p.key ? '🗝️' : ''}${p.ward ? '🛡️' : ''}</td><td>${p.crystals}</td><td>${p.role ? ROLE_BY_ID[p.role].icon + ' ' + esc(ROLE_BY_ID[p.role].name) + (p.roleUsed ? ' <span class="small">(used)</span>' : '') : '🂠'}</td><td>${facTxt(p)}</td></tr>`).join('')}</table>
+      <div class="scSub">Altar: 🔥${st.tally.fire} 🩸${st.tally.blood} 🔮${st.tally.chaos} • Rebellion threshold ${st.balance.threshold} 💎 • ${st.milestones} milestones${meP ? '' : ''}</div>`;
+    if ($('#scPlayers').dataset.h !== players) { $('#scPlayers').dataset.h = players; $('#scPlayers').innerHTML = players; }
+    // debug-override indicator lives here (above the log), not on the HUD
+    const dbg = $('#scDbg'), ov = this.dbgOverrides || [];
+    if (ov.length) {
+      const html = `⚠ Debug override active: ${ov.map(o => esc(o.label)).join(' · ')} <button id="dbgReset">Reset to normal</button>`;
+      if (dbg.dataset.h !== html) { dbg.dataset.h = html; dbg.innerHTML = html; $('#dbgReset').onclick = () => this.dbgGame?.debug?.resetOverrides(); }
+      dbg.classList.remove('hidden');
+    } else { dbg.classList.add('hidden'); dbg.dataset.h = ''; }
+    // log: keep the scroll position; stick to the bottom only when the reader is already there
+    const box = $('#scLog'), logs = this.logs || [];
+    const key = logs.length ? logs[logs.length - 1].n + ':' + logs.length : '0';
+    if (wasHidden || box.dataset.k !== key) {
+      const atBottom = wasHidden || box.scrollHeight - box.scrollTop - box.clientHeight < 24, prev = box.scrollTop;
+      const fmt = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+      box.dataset.k = key;
+      box.innerHTML = `<h3>GAME LOG</h3>` + (logs.length ? logs.map(l => `<div class="lg ${esc(l.kind || 'info')}"><b class="t">${fmt(l.t)}</b>${esc(l.text)}</div>`).join('') : '<div class="small">Nothing has happened yet.</div>');
+      box.scrollTop = atBottom ? box.scrollHeight : prev;
+    }
   }
 }
 

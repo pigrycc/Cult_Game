@@ -8,7 +8,7 @@ import { clearSavedMatchOverrides } from './overrides.js';
 
 // Configuration commands persisted to localStorage and re-applied automatically on the next start
 const PERSIST = new Set(['red_tick', 'freeze_red', 'yellow_mul', 'timescale', 'force_event', 'npc_config', 'debate_timer', 'max_concurrent',
-  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
+  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'chaos_on_explode', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
 const STORE = 'crypt_debug_settings_v1';
 export function loadDebugSettings() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { return {}; } }
 function saveDebugSettings(o) { try { localStorage.setItem(STORE, JSON.stringify(o)); } catch { /* storage unavailable */ } }
@@ -86,6 +86,7 @@ export class DebugMenu {
         <label><input type="checkbox" id="dFreeze" ${d.freezeRed ? 'checked' : ''}> Freeze Red Bar</label>
         <label>Yellow Reward Multiplier <input id="dYM" type="number" step="0.1" value="${d.yellowMul ?? 1}" style="width:60px"><button data-c="ymul">Set</button></label>
         <label>Server Time Scale <input id="dTS" type="number" step="0.5" value="${d.timeScale ?? 1}" style="width:60px"><button data-c="ts">Set</button></label>
+        <label><input type="checkbox" id="dChaosExplode" ${d.destabilizationTriggersChaosWin ? 'checked' : ''}> Red Bar destabilisation = Cult of Chaos VICTORY <span class="small">(off: the crypt explodes and everyone loses)</span></label>
         <button data-c="fill">Instant Fill to Next Milestone</button> <button data-c="explode" class="danger">Trigger Crypt Explosion</button>
       </details>
       <details><summary>4. Ceremony Phase & Altar</summary>
@@ -173,6 +174,7 @@ export class DebugMenu {
     document.getElementById('dFreeze').onchange = e => this.cmd('freeze_red', { on: e.target.checked });
     document.getElementById('dBotDelay').oninput = e => { document.getElementById('dBotDelayV').textContent = e.target.value + 's'; };
     document.getElementById('dBotDelay').onchange = e => this.cmd('bot_delay', { s: +e.target.value });
+    document.getElementById('dChaosExplode').onchange = e => this.cmd('chaos_on_explode', { on: e.target.checked });
     document.getElementById('dBotChat').onchange = e => this.cmd('bot_chat', { on: e.target.checked });
     document.getElementById('dNoSprint').onchange = e => this.cmd('disable_sprint', { on: e.target.checked });
     document.getElementById('dShove').oninput = e => { document.getElementById('dShoveV').textContent = e.target.value + '%'; };

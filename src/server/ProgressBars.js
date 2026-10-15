@@ -56,6 +56,9 @@ export class ProgressBars {
   explode() {
     this.running = false;
     this.m.fx('explosion');
+    if (this.m.dbg.destabilizationTriggersChaosWin) {         // debug rule: destabilisation is what the Cult of Chaos wanted all along
+      return this.m.endMatch('chaos', 'The Red Bar reached the milestone first — the crypt destabilised and the Cult of Chaos claims victory!');
+    }
     this.m.endMatch('nobody', 'The Red Bar reached the milestone first — THE CRYPT EXPLODED. Everyone loses.');
   }
 

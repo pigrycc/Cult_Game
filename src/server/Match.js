@@ -45,7 +45,7 @@ export class Match {
       debugAll: !!opts.debugAll, freezeRed: false, redX: null, redT: 1.5, yellowMul: 1,
       debateSec: null, debateInfinite: false, maxConcurrent: null, mutinyThreshold: null,
       forcedEvent: null, forcedNpcs: null, forcedDuo: null, botMode: 'roamer',
-      workSec: null, holdMul: 1, extendedCurses: false, botDecisionDelaySeconds: 2.25, botChat: true, botSpeed: 1, noSprint: false, shoveDropPct: 30,
+      workSec: null, holdMul: 1, extendedCurses: false, botDecisionDelaySeconds: 2.25, botChat: true, destabilizationTriggersChaosWin: false, botSpeed: 1, noSprint: false, shoveDropPct: 30,
       forceFaction: new Map(), forceRole: new Map(),
     };
     this.bars = new ProgressBars(this);
@@ -119,7 +119,7 @@ export class Match {
 
   // ------------------------------------------------------------ messaging
   toast(pid, text, kind = 'info') { this.send(pid, { t: 'toast', text, kind }); }
-  toastAll(text, kind = 'info') { for (const p of this.list) this.toast(p.id, text, kind); }
+  toastAll(text, kind = 'info') { if (this.toastTap) this.toastTap.push(text); for (const p of this.list) this.toast(p.id, text, kind); }
   /** Center banner. avatars = [{name,color}] shown as coloured minion portraits (2 = nominator ➜ nominee). */
   big(pid, text, sub = '', dur = 3, color = '#fff', avatars = null) { this.send(pid, { t: 'big', text, sub, dur, color, avatars }); }
   bigAll(text, sub = '', dur = 3, color = '#fff', avatars = null) { for (const p of this.list) this.big(p.id, text, sub, dur, color, avatars); }
@@ -133,7 +133,12 @@ export class Match {
   }
   errorFlash(pid, text) { this.send(pid, { t: 'errorFlash', text }); }
   fx(type, data = {}) { for (const p of this.list) this.send(p.id, { t: 'fx', type, ...data }); }
-  log(text) { this.publicLog.push({ t: Math.round(this.time), text }); if (this.publicLog.length > 40) this.publicLog.shift(); }
+  /** Public game log (TAB overlay). kind: info | role | ability | task | ceremony | end. Ids are monotonic so clients can merge increments. */
+  log(text, kind = 'info') {
+    this.logSeq = (this.logSeq || 0) + 1;
+    this.publicLog.push({ n: this.logSeq, t: Math.round(this.time), text, kind });
+    if (this.publicLog.length > 400) this.publicLog.shift();
+  }
 
   // ------------------------------------------------------------ lobby
   setColor(p, color) {
@@ -153,7 +158,7 @@ export class Match {
     this.track = MILESTONE_TRACKS[this.balance.milestones];
     this.dealIdentities();
     this.bars.reset(this.balance.milestones);
-    this.botChat.reset();
+    this.botChat.reset(); this.publicLog = [];
     this.tally = { fire: 0, blood: 0, chaos: 0 };
     this.sacrificeLog = []; this.winner = null; this.ceremonyIndex = 0; this.exhaustedQueue = [];
     this.setPhase(PHASE.REVEAL, this.timers.revealBack + this.timers.revealFront + 0.8);
@@ -163,7 +168,7 @@ export class Match {
         back: this.timers.revealBack, front: this.timers.revealFront,
       });
     }
-    this.log(`Ritual begins with ${n} minions.`);
+    this.log(`Ritual begins with ${n} minions.`, 'ceremony');
   }
 
   dealIdentities() {
@@ -490,7 +495,7 @@ export class Match {
     this.setPhase(PHASE.FINALE);
     const reveal = this.list.map(p => ({ id: p.id, name: p.name, faction: p.faction, roleId: p.roleId, gold: p.gold, ghost: p.ghost, color: p.color, leader: this.isChaosLeader(p) }));
     for (const p of this.list) this.send(p.id, { t: 'finale', winner, reason, tally: this.tally, reveal, log: this.sacrificeLog });
-    this.log(`FINALE: ${winner} — ${reason}`);
+    this.log(`FINALE: ${winner} — ${reason}`, 'end');
   }
 
   /**

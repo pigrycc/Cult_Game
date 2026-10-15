@@ -7,9 +7,9 @@ import * as THREE from 'three';
 import { makeBody, stepBody, EYE_H, wallsBetween } from '../shared/physics.js';
 import { PHASE, CER, ROLE_BY_ID, INTERACT_RANGE, NPC_INSPECT_RANGE } from '../shared/constants.js';
 import { LOBBY_MIRROR, SPYHOLE, roomAt, ROOMS, walls as MAP_WALLS } from '../shared/map.js';
-import { TOOLS, ITEM_TYPES, RUNES } from '../shared/tasks.js';
+import { TOOLS, ITEM_TYPES, RUNES, TASK_PALETTE } from '../shared/tasks.js';
 import { buildWorld, updateTally } from './world.js';
-import { makeMinion, animateMinion, setCrystals, setMinionColor, setGhost, makeTool, makeItem, makeCoins, makeMarker, animatePortal, mat, mesh } from './models.js';
+import { makeMinion, animateMinion, setCrystals, setMinionColor, setGhost, makeTool, makeItem, makeCoins, makeMarker, makeToolMarker, animatePortal, mat, mesh } from './models.js';
 import { FX } from './fx.js';
 import { Countdown, countdownSources } from './countdown.js';
 
@@ -31,7 +31,7 @@ export class Game {
     this.st = null; this.snaps = []; this.body = makeBody(0, -74);
     this.yaw = 0; this.pitch = 0; this.seq = 0; this.pending = []; this.outbox = []; this.sendAcc = 0;
     this.keys = new Set(); this.locked = false; this.offset = new THREE.Vector3();
-    this.players = new Map(); this.npcs = new Map(); this.tools = new Map(); this.items = new Map(); this.coins = new Map(); this.markers = new Map(); this.lard = new Map(); this.carryObjs = new Map(); this.runeSprites = new Map();
+    this.players = new Map(); this.npcs = new Map(); this.tools = new Map(); this.items = new Map(); this.coins = new Map(); this.markers = new Map(); this.tmarkers = new Map(); this.lard = new Map(); this.carryObjs = new Map(); this.runeSprites = new Map();
     this.target = null; this.holdingE = null; this.time = 0; this.slapT = 0; this.lastYaw = this.yaw; this.sway = new THREE.Vector2();
     this.booksPos = new Map();
     this.cdWindow = new Countdown(n => this.audio.countdown(n));    // mutiny vote, debate, nomination, execution, …
@@ -376,12 +376,16 @@ export class Game {
     // task markers & special objects
     const live = new Set();
     const showMarkers = st.phase === PHASE.WORK;
+    const toolCols = new Map();                                        // tool type -> colours of the active tasks that need it
+    const itemCols = new Map();                                        // task uid -> colour
     for (const t of st.tasks) {
-      const col = t.type === 'solo' ? '#ffd75e' : t.type === 'coop3' ? '#ff7ad9' : '#4ff0ff';
+      const col = TASK_PALETTE[t.color] || '#ffd75e';                  // ONE colour per task instance: every marker of the chain shares it
+      itemCols.set(t.uid, col);
+      if (t.tool) { const a = toolCols.get(t.tool) || []; a.push(col); toolCols.set(t.tool, a); }
       for (const pt of t.points) {
         live.add(pt.id);
         let mk = this.markers.get(pt.id);
-        if (!mk) { mk = makeMarker(pt.goal ? '#66ff66' : col); this.scene.add(mk); this.markers.set(pt.id, mk); }
+        if (!mk) { mk = makeMarker(col); this.scene.add(mk); this.markers.set(pt.id, mk); }
         mk.position.set(pt.x, (pt.y ?? 1) + 0.45, pt.z); mk.visible = showMarkers; mk.userData.pt = pt; mk.userData.task = t;
       }
       if (t.obj) {
@@ -395,6 +399,27 @@ export class Game {
       }
     }
     for (const [id, mk] of this.markers) if (!live.has(id)) { this.scene.remove(mk); this.markers.delete(id); }
+    // floating beacons above every free tool a task needs, and above task items (e.g. the biting book), in the task's colour
+    const liveTm = new Set();
+    const beacon = (key, col, x, y, z) => {
+      liveTm.add(key);
+      let mk = this.tmarkers.get(key);
+      if (mk && mk.userData.col !== col) { this.scene.remove(mk); mk = null; }
+      if (!mk) { mk = makeToolMarker(col); mk.userData.col = col; this.scene.add(mk); this.tmarkers.set(key, mk); }
+      mk.position.set(x, y, z); mk.visible = showMarkers;
+    };
+    for (const tl of W.tools) {
+      const cols = toolCols.get(tl.type);
+      if (!cols || tl.heldBy) continue;
+      cols.forEach((c, i) => beacon(`t:${tl.id}:${i}`, c, tl.x + (i - (cols.length - 1) / 2) * 0.4, (tl.y || 0) + 1.7, tl.z));
+    }
+    for (const it of W.items) {
+      const c = it.task != null ? itemCols.get(it.task) : null;
+      if (!c || it.heldBy) continue;
+      const mm = this.items.get(it.id);
+      beacon(`i:${it.id}`, c, mm ? mm.position.x : it.x, (mm ? mm.position.y : it.y) + 1.0, mm ? mm.position.z : it.z);
+    }
+    for (const [k, mk] of this.tmarkers) if (!liveTm.has(k)) { this.scene.remove(mk); this.tmarkers.delete(k); }
     const liveT = new Set(st.tasks.map(t => t.uid));
     for (const [uid, o] of this.carryObjs) if (!liveT.has(uid)) { this.scene.remove(o); this.carryObjs.delete(uid); }
     for (const [uid, o] of this.runeSprites) if (!liveT.has(uid)) { this.scene.remove(o); this.runeSprites.delete(uid); }
@@ -583,6 +608,7 @@ export class Game {
     for (const [id, m] of this.items) if (m.userData.wild) { const p = this.booksPos.get(id); if (p) { m.position.set(p.x, p.y - 0.15, p.z); m.rotation.y += dt * 6; } }
     // markers bob
     for (const mk of this.markers.values()) { mk.userData.diamond.rotation.y += dt * 2; mk.userData.diamond.position.y = Math.sin(this.time * 3 + mk.position.x) * 0.06; }
+    for (const mk of this.tmarkers.values()) { mk.userData.diamond.rotation.y += dt * 3; mk.userData.diamond.position.y = 0.3 + Math.sin(this.time * 4 + mk.position.x) * 0.08; }
 
     // ---- world animation
     animatePortal(this.world.portal, this.time, dt);
@@ -623,10 +649,28 @@ export class Game {
       this.vmHeldKey = key; this.vmHeld.clear();
       if (me.tool) {
         const t = makeTool(me.tool);
-        t.scale.setScalar(0.5); t.position.set(0.32, -0.98, -1.3); t.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0.05, 0.62, 0.78).normalize());
-        if (me.tool === 'wrench' || me.tool === 'hammer' || me.tool === 'oilcan') { t.scale.setScalar(0.75); t.rotation.set(-0.35, 0.3, -0.2); t.position.set(0.3, -0.5, -0.6); }
+        // Long tools (head at the origin, handle up +Y): hold the HANDLE near the hands and push the HEAD out in front of the
+        // camera so the whole business end is on screen. Short tools (grip at the origin) are simply raised and tilted forward.
+        const LONG = { broom: 1.25, mop: 1.2, brush: 1.2, gaff: 1.3, shovel: 1.1 };
+        if (LONG[me.tool]) {
+          const yA = new THREE.Vector3(0.38, -0.5, 0.78).normalize();                  // head -> handle: toward the player, down
+          const ref = new THREE.Vector3(0, 0.6, 0.8).normalize();                      // flat faces (shovel blade) face up + toward the camera
+          const zA = ref.clone().sub(yA.clone().multiplyScalar(ref.dot(yA))).normalize();
+          const xA = new THREE.Vector3().crossVectors(yA, zA);
+          t.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xA, yA, zA));
+          t.scale.setScalar(0.95); t.position.set(-0.02, -0.12, -1.15);
+        } else if (me.tool === 'oilcan') { t.scale.setScalar(1.7); t.rotation.set(0.15, 0.5, 0); t.position.set(0.3, -0.55, -0.85); }
+        else { t.scale.setScalar(1.1); t.rotation.set(-0.55, 0.3, -0.15); t.position.set(0.3, -0.78, -0.85); }
+        if (me.load) {                                                                   // loaded state is part of the tool: coal sits ON the blade
+          const l = makeItem(me.load);
+          if (me.tool === 'shovel') {
+            l.scale.setScalar(0.95); l.position.set(0, -0.14, 0.07);
+            const l2 = makeItem(me.load); l2.scale.setScalar(0.6); l2.position.set(0.08, -0.24, 0.06); t.add(l2);
+            const l3 = makeItem(me.load); l3.scale.setScalar(0.55); l3.position.set(-0.08, -0.05, 0.06); t.add(l3);
+          } else { l.scale.setScalar(1.2); l.position.set(0, 0.2, 0.12); }
+          t.add(l);
+        }
         this.vmHeld.add(t);
-        if (me.load) { const l = makeItem(me.load); l.scale.setScalar(0.6); l.position.set(0.24, -0.5, -0.7); this.vmHeld.add(l); }
       } else if (me.item) {
         const it = makeItem(me.item); const big = ITEM_TYPES[me.item]?.heavy;
         it.scale.setScalar(big ? 1.1 : 0.8); it.position.set(0, big ? -0.62 : -0.38, big ? -0.62 : -0.55);
