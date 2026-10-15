@@ -116,6 +116,11 @@ export class Debug {
       case 'extended_curses': m.dbg.extendedCurses = !!a.on; return ok(`Extended curses (Call of the Abyss, Dark Initiation) in random pool: ${a.on ? 'ON' : 'OFF'}`);
       case 'teleport': if (target && isFinite(+a.x) && isFinite(+a.z)) { Object.assign(target.body, { x: +a.x, y: 0, z: +a.z, vx: 0, vy: 0, vz: 0 }); m.send(target.id, { t: 'teleport', x: +a.x, z: +a.z, yaw: target.body.yaw }); ok(`${target.name} teleported (keeps held tool)`); } return;
       case 'note': return ok(String(a.text || '').slice(0, 120));
+      case 'reset_overrides': {
+        Object.assign(m.dbg, { freezeRed: false, debateInfinite: false, debateSec: null, yellowMul: 1, maxConcurrent: null, workSec: null, holdMul: 1, redX: null, redT: 1.5 });
+        m.timeScale = 1;
+        return ok('Match-affecting overrides reset to normal');
+      }
       case 'allow_debug_all': if (p.id === m.hostId) { m.dbg.debugAll = !!a.on; ok(`Debug for everyone: ${a.on}`); } return;
       default: return ok('Unknown debug command ' + cmd);
     }

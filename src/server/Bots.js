@@ -14,13 +14,14 @@
 // ============================================================================
 import { PHASE, CER, FACTIONS, ROLE_BY_ID } from '../shared/constants.js';
 import { NAV_NODES, NAV_EDGES, PORTAL, roomAt } from '../shared/map.js';
+import { BOT_MECHS } from '../shared/tasks.js';
 import { wallsBetween } from '../shared/physics.js';
 import { pick, rand, dist2, weighted } from './util.js';
 
-// Task mechanics a Humanlike bot performs with the REAL game actions (same validated calls a human triggers).
+// Humanlike bots perform BOT_MECHS tasks with the REAL game actions (same validated calls a human triggers).
 // Everything else (carry, bell, bellows, stack, relay, carcass, calib, books) needs choreography the bots can't do yet, so
-// Humanlike bots leave those to players instead of faking them.
-const REAL_MECH = new Set(['hold', 'fetch', 'runes', 'coop']);
+// they leave those to players instead of faking them (TaskManager keeps enough bot-doable tasks on the board).
+const REAL_MECH = BOT_MECHS;
 const USE_RANGE = 1.7;       // how close a bot stands before it interacts
 
 export const BOT_NAMES = [

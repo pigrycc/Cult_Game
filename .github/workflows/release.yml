@@ -24,6 +24,7 @@ jobs:
   build-windows:
     if: github.event_name != 'workflow_dispatch' || inputs.targets != 'macos'
     runs-on: ubuntu-latest
+    timeout-minutes: 25          # a hung step must fail the build, not run for hours
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,6 +50,7 @@ jobs:
   build-macos:
     if: github.event_name != 'workflow_dispatch' || inputs.targets != 'windows'
     runs-on: macos-14
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

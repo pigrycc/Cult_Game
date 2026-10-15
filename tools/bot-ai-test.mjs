@@ -211,5 +211,34 @@ ok(maxPer <= 5, `no single bot floods the chat (max ${maxPer} lines in a debate)
   run(m, 40, 0.05, () => m.botChat.log.some(x => x.kind === 'partner'));
   ok(m.botChat.log.some(x => x.kind === 'partner' && /saw|Saw/i.test(x.text)), `a bot waiting at a 2-person task asks for help: "${m.botChat.log.find(x => x.kind === 'partner')?.text}"`); }
 
+// ===================================================================== 4. no stalls: bots-only games must finish
+console.log('--- match length & jams ---');
+function fullGame({ players, maxConcurrent = null, freeze = false }) {
+  const m = new Match({ send: () => {} });
+  const hid = m.addPlayer({ name: 'Host', isHost: true }).id; m.bots.spawn(players - 1);
+  Object.assign(m.dbg, { botMode: 'human', freezeRed: freeze, maxConcurrent });
+  m.timers.revealBack = m.timers.revealFront = 0.5; m.startGame(hid); m.phaseT = 0; m.tick(0.016);
+  let t = 0; while (t < 30 * 60 && m.phase !== PHASE.FINALE) { m.tick(0.05); t += 0.05; }
+  return { done: m.phase === PHASE.FINALE, min: t / 60, pool: [...m.tasks.active.values()].map(i => i.key).join(',') };
+}
+for (const players of [5, 6, 7, 8, 9, 10, 11]) {
+  const r = fullGame({ players });
+  ok(r.done && r.min <= 16, `${players} players, all bots (Humanlike): match ends after ${r.min.toFixed(1)} game-minutes (limit 16)`);
+}
+for (const cap of [1, 2, 3]) for (const players of [5, 8]) {
+  const r = fullGame({ players, maxConcurrent: cap, freeze: true });
+  ok(r.done && r.min <= 30, `board limited to ${cap} task(s), Red Bar frozen, ${players} players: still finishes (${r.min.toFixed(1)} min)${r.done ? '' : ' — STUCK with [' + r.pool + ']'}`);
+}
+{ // with a 1-task board the single task must always be one the bots can actually do
+  const { m } = world({ bots: 5 }); m.dbg.maxConcurrent = 1; m.dbg.freezeRed = true; let bad = 0, checks = 0;
+  const refused = new Set(['carry', 'bell', 'bellows', 'stack', 'relay', 'carcass', 'calib', 'books']);
+  for (let i = 0; i < 6000; i++) { m.tick(0.05); if (i % 20 === 0 && m.tasks.active.size) { checks++; if ([...m.tasks.active.values()].some(t => refused.has(t.def.mech))) bad++; } }
+  ok(checks > 50 && bad === 0, `with a 1-task board it is always a chore the bots can do (${bad} bad of ${checks} snapshots)`); }
+{ // humans still get the full variety: with NO bots the spawner is unrestricted
+  const m = new Match({ send: () => {} }); const hid = m.addPlayer({ name: 'H', isHost: true }).id; for (let i = 0; i < 4; i++) m.addPlayer({ name: 'P' + i });
+  m.startGame(hid); m.phaseT = 0; m.tick(0.016); const seen = new Set();
+  for (let i = 0; i < 200; i++) { for (const t of [...m.tasks.active.values()]) m.tasks.removeTask(t); m.tasks.respawnQ = []; m.tasks.fillPool(); for (const t of m.tasks.active.values()) seen.add(t.def.mech); }
+  ok(['carry', 'bell', 'bellows', 'stack', 'relay', 'carcass', 'calib'].every(k => seen.has(k)), 'without bots, all task types still spawn for human crews'); }
+
 console.log(fails ? `\n${fails} FAILED` : '\nBOT AI TESTS PASSED');
 process.exit(fails ? 1 : 0);

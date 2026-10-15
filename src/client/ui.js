@@ -5,6 +5,7 @@
 // ============================================================================
 import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS, roleCard, FACTION_OBJECTIVE } from '../shared/constants.js';
 import { TOOLS, ITEM_TYPES, RUNES } from '../shared/tasks.js';
+import { matchAffectingOverrides } from './overrides.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const h = (tag, cls = '', html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
@@ -227,6 +228,13 @@ export class UI {
     $('#blind').style.opacity = !inLobby && you.blind ? 0.97 : 0;
     document.body.classList.toggle('drunk', !inLobby && you.fumes > 0);
     $('#ghostTint').style.opacity = !inLobby && you.ghost ? 0.25 : 0;
+    // --- forgotten debug overrides that change how long a match lasts
+    const dw = $('#dbgWarn'), ov = st.dbg && inMatch ? matchAffectingOverrides({ ...st.dbg, timeScale: st.dbg.timeScale }) : [];
+    if (ov.length) {
+      const html = `⚠ Debug overrides active: ${ov.map(o => esc(o.label)).join(' · ')} <button id="dbgReset">Reset to normal</button>`;
+      if (dw.dataset.h !== html) { dw.dataset.h = html; dw.innerHTML = html; $('#dbgReset').onclick = () => game.debug.resetOverrides(); }
+      dw.classList.remove('hidden');
+    } else { dw.classList.add('hidden'); dw.dataset.h = ''; }
     // --- debug panel data
     if (game.debug) game.debug.update(st);
   }
