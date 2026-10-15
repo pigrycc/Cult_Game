@@ -117,7 +117,13 @@ export class Game {
         case 'KeyF': if (this.target?.kind === 'player') this.net.send({ t: 'shove', target: this.target.pid }); this.slapT = 0.3; break;
         case 'KeyX': this.net.send({ t: 'buck' }); break;
         case 'KeyG': this.useAbility(); break;
-        case 'KeyV': this.audio.ensure(); this.audio.startMic().then(ok => { if (!ok) this.ui.toast('Microphone unavailable — use text chat [Enter].', 'warn'); }); this.audio.ptt = true; break;
+        case 'KeyV': this.audio.ensure(); this.startVoice();
+          if (this.audio.mode === 'ptt') this.audio.ptt = true;
+          else { this.audio.muted = !this.audio.muted; this.ui.toast(this.audio.muted ? '🔇 Microphone muted (V to unmute)' : '🎤 Microphone open — just talk', 'info'); }
+          break;
+        case 'KeyN': this.audio.mode = this.audio.mode === 'open' ? 'ptt' : 'open'; this.audio.ptt = false; this.audio.muted = false; this.audio.gate.reset();
+          try { localStorage.setItem('crypt_voice_mode', this.audio.mode); } catch { /* storage unavailable */ }
+          this.ui.toast(this.audio.mode === 'open' ? '🎤 Open microphone (voice activation). V = mute / unmute.' : '🎙 Push-to-talk: hold V to speak.', 'info'); break;
         case 'Enter': document.exitPointerLock(); this.ui.openChat(t => this.net.send({ t: 'chat', text: t })); setTimeout(() => { this.keys.clear(); }, 0); break;
         case 'KeyM': this.mini.classList.toggle('bigmap'); break;
         case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': this.vote(+e.code.slice(5) - 1); break;
@@ -127,7 +133,7 @@ export class Game {
     window.addEventListener('keyup', e => {
       this.keys.delete(e.code);
       if (e.code === 'KeyE') this.releaseE();
-      if (e.code === 'KeyV') this.audio.ptt = false;
+      if (e.code === 'KeyV' && this.audio.mode === 'ptt') this.audio.ptt = false;
       if (e.code === 'Tab') this.ui.scoreboard(false);
     });
   }
@@ -222,6 +228,8 @@ export class Game {
     if (this.me) setMinionColor(this.self, this.me.color);
     if (this.me) setGhost(this.self, !!this.me.ghost);
     this.ui.updateHud(st, this);
+    this.audio.silenced = !!(st.you.muted || st.you.gagged);                       // curse of silence / Gagging Seal: nothing is transmitted
+    this.ui.updateMic(this.audio, st);
     this.syncEntities(st);
     updateTally(this.world.tally, st.tally);
     if (!prev || prev.phase !== st.phase) { if (st.phase === PHASE.LOBBY) { this.ui.hideFinale(); this.purgeClientFx(); } }
@@ -638,6 +646,15 @@ export class Game {
     this.updatePlates();
     this.drawMinimap();
     this.render();
+  }
+
+  /** Open the microphone (needs a user gesture / permission once). Called automatically when the match scene starts. */
+  startVoice() {
+    if (this.voiceAsked) return; this.voiceAsked = true;
+    this.audio.ensure();
+    this.audio.startMic().then(ok => {
+      this.ui.toast(ok ? '🎤 Open microphone — just talk (V mute • N push-to-talk)' : 'Microphone unavailable — use text chat [Enter].', ok ? 'info' : 'warn');
+    });
   }
 
   isCarryingPlayer(id) { return this.st.players.some(q => q.carriedBy === id); }

@@ -34,6 +34,7 @@ jobs:
       - run: npm ci
       - run: node tools/rules-test.mjs
       - run: node tools/ux3-test.mjs
+      - run: node tools/voice-test.mjs
       - run: node tools/bot-master-test.mjs
       - run: node tools/bot-ai-test.mjs
       - run: node build.mjs --package
@@ -61,6 +62,7 @@ jobs:
       - run: npm ci
       - run: node tools/rules-test.mjs
       - run: node tools/ux3-test.mjs
+      - run: node tools/voice-test.mjs
       - run: node tools/bot-ai-test.mjs
       - run: node build.mjs --package-mac
       - name: Verify the shipped zip (unzip it fresh, check signature + architectures)

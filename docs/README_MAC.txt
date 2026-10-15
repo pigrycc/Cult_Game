@@ -13,7 +13,7 @@ FIRST LAUNCH  (needed once — the app is not notarized by Apple)
   3. Allow the prompts that follow:
        • "accept incoming network connections"  – only needed when YOU host a game
        • Local Network access                   – to find/join friends on your LAN
-       • Microphone                             – for proximity voice chat (push-to-talk)
+       • Microphone                             – for proximity voice chat (open mic)
 
 HOST A GAME
   Main menu → enter your name → HOST GAME (default port 7777). Friends join with your IP:port.
@@ -34,10 +34,10 @@ MAC KEYBOARD NOTES
   Debug console:  press the ` (backtick) key — or Fn+F1 (the F-keys are brightness/volume keys by default).
   Fullscreen:     Ctrl+Cmd+F  (menu: View → Enter Full Screen).     Quit: Cmd+Q.
   Mouse look:     click inside the window to capture the mouse, Esc releases it.
-  Voice:          hold V (push-to-talk). If the microphone prompt was denied:
+  Voice:          open microphone (just talk; V mutes, N = push-to-talk). If the microphone prompt was denied:
                   System Settings → Privacy & Security → Microphone → enable Crypt of Minions.
 
 CONTROLS
   WASD move · Shift run · Space jump / hop off · E use (hold for timed tasks; on a minion: climb on back)
   Q drop · LMB lift / throw / slap · F shove · X buck off a rider · G role card · 1–4 vote crystals
-  V push-to-talk · Enter chat · Tab scoreboard · M big map
+  V mute mic · N push-to-talk · Enter chat · Tab scoreboard · M big map

@@ -235,3 +235,8 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .avArrow { font-size: 28px; color: #ffd75e; }
 #bigText.err .bigMain { animation: shake .3s 2; }
 .resLine { color: #ffe28a; opacity: 1; font-size: 14px; }
+
+.pTalk { display: inline-block; font-size: 20px; filter: drop-shadow(0 0 6px #7dff9a); animation: talkPulse .5s ease-in-out infinite alternate; }
+@keyframes talkPulse { from { transform: scale(0.85); opacity: .75; } to { transform: scale(1.25); opacity: 1; } }
+#micChip { position: fixed; left: 140px; bottom: 16px; padding: 3px 10px; font-size: 12px; border-radius: 12px; background: rgba(12,9,7,.8); border: 1px solid #5a4a30; color: #cdbf9d; z-index: 4; pointer-events: none; }
+#micChip.live { border-color: #7dff9a; color: #bfffd0; box-shadow: 0 0 8px #3cff7a; } #micChip.bad { border-color: #ff6b6b; color: #ffb0b0; } #micChip.off { opacity: .7; }
