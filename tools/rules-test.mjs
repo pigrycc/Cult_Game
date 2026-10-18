@@ -261,5 +261,25 @@ function playCountdown({ total, rate = 1, packetHz = 10, fps = 60, mutate = null
   Object.assign(m.dbg, { freezeRed: true, debateInfinite: true, yellowMul: 0, maxConcurrent: 1, workSec: 600, holdMul: 5, debateSec: 99 }); m.timeScale = 0.1;
   m.debug.run(P(0), 'reset_overrides', {});
   ok(!m.dbg.freezeRed && !m.dbg.debateInfinite && m.dbg.yellowMul === 1 && m.dbg.maxConcurrent === null && m.dbg.workSec === null && m.dbg.holdMul === 1 && m.dbg.debateSec === null && m.timeScale === 1, 'server "Reset to normal" restores every match-affecting value'); }
+// --- Dark Initiation stealth: the Chaos Leader is snapped back to their spot and a blackout buffer hides the walk
+{ const FACT = { FIRE: 'fire', BLOOD: 'blood', CHAOS: 'chaos' };
+  const { m, P } = mk();
+  const L = P(1), T = P(2);
+  m.chaosLeaderId = L.id; L.faction = FACT.CHAOS; T.faction = FACT.FIRE; T.immuneChaos = false;
+  m.cer.begin(1); m.cer.assemble();
+  ok(L.cerSpot && typeof L.cerSpot.x === 'number', 'the ceremony records every minion\u2019s standing spot (cerSpot)');
+  m.cer.setSub(CER.CURSE, 10, 'initiation');
+  ok(m.list.filter(p => p.id !== L.id).every(p => p.blind) && !L.blind, 'during Dark Initiation only the Chaos Leader can see');
+  const spot = { ...L.cerSpot };
+  Object.assign(L.body, { x: spot.x + 6, z: spot.z + 6 });                    // Leader walks off to reach a victim
+  m.cer.convert(T);
+  ok(T.faction === FACT.CHAOS, 'the chosen player is converted to Chaos');
+  ok(Math.hypot(L.body.x - spot.x, L.body.z - spot.z) < 0.01, 'the Leader is auto-teleported back to their original spot');
+  ok(m.cer.blindHoldUntil && m.cer.blindHoldUntil > m.time, 'a blackout buffer is armed after the conversion');
+  m.cer.tick(0.1);
+  ok(m.list.filter(p => p.id !== L.id).every(p => p.blind), 'everyone else stays blind during the ~2 s buffer');
+  m.time += 2.1; m.cer.tick(0.1);
+  ok(m.list.filter(p => p.id !== L.id).every(p => !p.blind), 'vision is restored once the blackout buffer expires'); }
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL RULE TESTS PASSED');
 process.exit(fails ? 1 : 0);
