@@ -53,10 +53,20 @@ YOUR TASK LIST (Work Phase)
   it — press H to call the whole crew for help if your partner wanders off.
 
 TASK MINIGAMES (new)
-  Some chores now open a quick 2D minigame when you press E with the right tool:
+  Many chores open a quick 2D minigame when you press E (with the right tool, if one is needed):
     • Scrub (Clean Soot, Sweep Glass, Mop Lard, Polish Runic Tablet [Rag]) — hold LMB and wipe the grime until ~90% clear.
+    • Catch (Drain Condensate [Bucket]) — slide the bucket to catch falling drips.
+    • De-rust (Oil Mechanisms [Oil Can]) — click-hold each rusted gear for 2 s.
+    • Whack (Forge Wedges [Hammer], Chop Meat [Cleaver]) — click each glowing target as it pops up.
+    • Grind (Sharpen Blades [Dull Blade]) — hold to grind, RELEASE inside the green sweet spot.
+    • Mix (Distill Acid) — pour 3 base colours to match the target shade.
+    • Simon (Flush Research Machine) — repeat the flashed colour sequence over 3 rounds.
+    • Pour (Add Oil to Lamps) — hold to fill into the green band and release (overflow resets).
+    • Plunge (Unclog Chute [Gaff]) — shove the hook up and down with the mouse.
+    • Gauges (Equalize Pressure) — click each gauge while its needle is in the red zone.
   Sorting chores (Replace Altar Candles, Sort Glowing Specimens, Sort Scrap Metal) — carry each item from its crate to a
-  glowing slot (E). More minigames are coming in a later update.
+  glowing slot (E). New tools: Rag, Drain Bucket, Dull Ceremonial Blade, Butcher Cleaver.
+  Co-op: the Bookshelf Ladder is now a stacking task (one minion rides another's back to reach the high shelf).
 
 DEBUG: CURSE ODDS (host, F1 → Ceremony & Altar → "Curse spawn odds")
   A slider per curse glyph sets its relative spawn weight (0 = never). Tilt the odds to test a specific curse, or

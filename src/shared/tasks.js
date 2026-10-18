@@ -28,6 +28,9 @@ export const TOOLS = {
   gaff:   { name: 'Gaff Hook',          color: '#a0a6ad' },
   bellow: { name: 'Hand Bellows',       color: '#8b5a2b' },
   rag:    { name: 'Polishing Rag',      color: '#d8c8a0' },
+  bucket: { name: 'Drain Bucket',       color: '#8a7a5a' },
+  dullblade: { name: 'Dull Ceremonial Blade', color: '#b8bcc4' },
+  cleaver: { name: 'Butcher Cleaver',   color: '#c0c6cc' },
 };
 
 /** One distinct colour per active task (index stored on the task). Markers, required tools and task items all share it. */
@@ -50,6 +53,9 @@ export const TOOL_SPAWNS = [
   { id: 'brush1', type: 'brush', x: -9.0, z: 22.6, y: 0 },
   { id: 'gaff1', type: 'gaff', x: 8.6, z: 29.6, y: 0 },
   { id: 'rag1', type: 'rag', x: 5.2, z: -7.0, y: 0 },
+  { id: 'bucket1', type: 'bucket', x: -26.5, z: -10.5, y: 0 },
+  { id: 'dullblade1', type: 'dullblade', x: -22.5, z: 4.0, y: 0 },
+  { id: 'cleaver1', type: 'cleaver', x: 6.0, z: 22.5, y: 0 },
 ];
 
 export const ITEM_TYPES = {
@@ -90,16 +96,19 @@ export const TASKS = {
              src: P(-32.9, -8.5, 0.9), steps: [{ ...P(-27, -9.5, 0.7), time: 0.5 }], reps: 3 },
   pipes:   { room: 'boiler', name: 'Patch Leaking Pipes', type: 'solo', mech: 'hold', time: 2,
              spots: [P(-21, -17.5, 1.6), P(-33, -17.5, 1.2), P(-29.5, -17.5, 2.0)], reps: 3 },
-  drain:   { room: 'boiler', name: 'Drain Condensate', type: 'solo', mech: 'hold', time: 5, spots: [P(-24.0, -12.2, 0.4)], reps: 1 },
+  drain:   { room: 'boiler', name: 'Drain Condensate', type: 'solo', mech: 'hold', time: 5, tool: 'bucket', game: 'catch', spots: [P(-24.0, -12.2, 0.4)], reps: 1 },
+  gauges:  { room: 'boiler', name: 'Equalize Pressure Gauges', type: 'solo', mech: 'hold', game: 'gauges', spots: [P(-30.5, -17.5, 1.5)], reps: 1 },
   valve:   { room: 'boiler', name: 'Tighten Main Valve (Stacking)', type: 'coop2', mech: 'stack', time: 4, tool: 'wrench',
              spots: [P(-22.5, -17.5, 3.0)] },
   bellows: { room: 'boiler', name: 'Foundry Bellows', type: 'coop2', mech: 'bellows',
              handles: [P(-34.0, -15.6, 0.05), P(-31.0, -15.6, 0.05)], count: 10 },
   // ---- Armory & Workshop ----
-  oil:     { room: 'armory', name: 'Oil Rusty Mechanisms', type: 'solo', mech: 'hold', time: 1.5, tool: 'oilcan',
-             spots: [P(-18.5, 6, 1.4), P(-18.5, 10, 1.4), P(-18.5, 14, 1.4)], reps: 3 },
-  forge:   { room: 'armory', name: 'Forge Repair Wedges', type: 'solo', mech: 'hold', time: 0.9, tool: 'hammer',
-             spots: [P(-27, 7.2, 0.95)], reps: 3 },
+  oil:     { room: 'armory', name: 'Oil Rusty Mechanisms', type: 'solo', mech: 'hold', tool: 'oilcan', game: 'derust',
+             spots: [P(-18.5, 10, 1.4)], reps: 1 },
+  forge:   { room: 'armory', name: 'Forge Repair Wedges', type: 'solo', mech: 'hold', tool: 'hammer', game: 'whack',
+             spots: [P(-27, 7.2, 0.95)], reps: 1 },
+  sharpen: { room: 'armory', name: 'Sharpen Ceremonial Blades', type: 'solo', mech: 'hold', tool: 'dullblade', game: 'grind',
+             spots: [P(-24.5, 7.8, 0.95)], reps: 1 },
   hang:    { room: 'armory', name: 'Hang Up Tools', type: 'solo', mech: 'fetch', item: 'tool_s',
              srcs: [P(-31, 5, 0.1), P(-24.5, 12.5, 0.1), P(-32.5, 9.5, 0.1)], steps: [{ ...P(-26, 17.6, 1.5), time: 0.4 }], reps: 3 },
   saw:     { room: 'armory', name: 'Two-Man Workshop Saw', type: 'coop2', mech: 'coop', time: 5,
@@ -107,10 +116,10 @@ export const TASKS = {
   sandbag: { room: 'armory', name: 'Sandbag Relay', type: 'coop2', mech: 'relay', time: 1.5,
              pile: P(-32.8, 14, 1.0), drop: P(-31.2, 12.2, 0.2), target: P(-28, 0, 0.1), reps: 2 },
   // ---- Alchemy Lab ----
-  distill: { room: 'alchemy', name: 'Distill Acid Neutralizer', type: 'solo', mech: 'hold', time: 2.5,
-             spots: [P(24.5, -15.6, 1.1), P(27, -15.6, 1.1), P(29.5, -15.6, 1.1)], reps: 3 },
-  flush:   { room: 'alchemy', name: 'Flush the Research Machine', type: 'solo', mech: 'fetch', item: 'alcohol',
-             src: P(30.5, -15.6, 1.1), steps: [{ ...P(32.6, -8, 1.8), time: 1.5 }], reps: 1 },
+  distill: { room: 'alchemy', name: 'Distill Acid Neutralizer', type: 'solo', mech: 'hold', game: 'mix',
+             spots: [P(27, -15.6, 1.1)], reps: 1 },
+  flush:   { room: 'alchemy', name: 'Flush the Research Machine', type: 'solo', mech: 'hold', game: 'simon',
+             spots: [P(32.6, -8, 1.8)], reps: 1 },
   glass:   { room: 'alchemy', name: 'Sweep Broken Glass', type: 'solo', mech: 'hold', time: 1.5, tool: 'broom', game: 'scrub',
              spots: [P(24, -5.5, 0.05), P(29, -11, 0.05), P(31, -4, 0.05)], reps: 3 },
   specimens: { room: 'alchemy', name: 'Sort Glowing Specimens', type: 'solo', mech: 'collect', item: 'specimen',
@@ -120,12 +129,12 @@ export const TASKS = {
   // ---- Library & Scriptorium ----
   books:   { room: 'library', name: 'Subdue Biting Books', type: 'solo', mech: 'books', item: 'book',
              area: { x0: 22, x1: 32, z0: 5, z1: 13 }, steps: [{ ...P(21, 13.9, 1.0), time: 1 }, { ...P(28, 16.4, 1.6), time: 0.4 }], reps: 3 },
-  lamps:   { room: 'library', name: 'Add Oil to Runic Lamps', type: 'solo', mech: 'fetch', item: 'oiljug',
-             src: P(22, 13.9, 1.0), steps: [{ ...P(33.5, 3.0, 2.0), time: 2 }], reps: 1 },
+  lamps:   { room: 'library', name: 'Add Oil to Runic Lamps', type: 'solo', mech: 'hold', game: 'pour',
+             spots: [P(33.5, 3.0, 2.0)], reps: 1 },
   runes:   { room: 'library', name: 'Flip Pages in Runic Dictionary', type: 'solo', mech: 'runes',
              spots: [P(27, 8.3, 1.2)], wall: P(34.6, 10, 2.6), reps: 3 },
-  ladder:  { room: 'library', name: 'Bookshelf Ladder Cart', type: 'coop2', mech: 'coop', time: 5,
-             handles: [P(30.6, 15.4, 1.0), P(33.4, 15.4, 2.0)] },
+  ladder:  { room: 'library', name: 'Bookshelf Ladder Cart (Stacking)', type: 'coop2', mech: 'stack', time: 4,
+             spots: [P(33.0, 15.4, 2.6)] },
   press:   { room: 'library', name: 'Manual Scroll Pressing', type: 'coop2', mech: 'coop', time: 5,
              handles: [P(30.5, 7.6, 1.0), P(30.5, 12.2, 1.0)] },
   // ---- Kitchen & Cold Room ----
@@ -139,8 +148,10 @@ export const TASKS = {
              handles: [P(-6.0, 20.0, 1.1), P(-3.0, 20.0, 1.1)] },
   carcass: { room: 'kitchen', name: 'Haul a Frozen Carcass', type: 'coop2', mech: 'carcass', item: 'carcass',
              door: P(3.5, 17.4, 1.1), src: P(8.2, 15.4, 0.6), target: P(-2, 21.6, 1.0) },
+  chop:    { room: 'kitchen', name: 'Chop Meat Rations', type: 'solo', mech: 'hold', tool: 'cleaver', game: 'whack',
+             spots: [P(5.5, 24.0, 0.95)], reps: 1 },
   // ---- Bone Mill & Waste Pit ----
-  chute:   { room: 'bonemill', name: 'Unclog Waste Chute', type: 'solo', mech: 'hold', time: 3, tool: 'gaff',
+  chute:   { room: 'bonemill', name: 'Unclog Waste Chute', type: 'solo', mech: 'hold', tool: 'gaff', game: 'plunge',
              spots: [P(5, 28.5, 1.4)], reps: 1 },
   sack:    { room: 'bonemill', name: 'Place Sack for Bone Meal', type: 'solo', mech: 'hold', time: 2.5,
              spots: [P(-3, 39.4, 0.7)], reps: 1 },

@@ -273,3 +273,21 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 #scrubC { width: 520px; height: 320px; border: 2px solid #6a5030; border-radius: 8px; background: #1a1410; cursor: crosshair; display: block; }
 .scrubBar { height: 10px; background: #332; border-radius: 5px; margin-top: 8px; overflow: hidden; } #scrubFill { height: 100%; width: 0; background: linear-gradient(90deg,#69f0ae,#18ffff); transition: width .1s; }
 .scrubPct { text-align: center; font-size: 13px; color: #cdbf9d; margin-top: 2px; }
+/* ---- B2 minigame overlays ---- */
+.mgWrap { margin: 8px auto; text-align: center; } .mgWrap canvas { border: 2px solid #6a5030; border-radius: 8px; background: #11100e; display: block; margin: 0 auto; cursor: crosshair; }
+.mgInfo { margin-top: 8px; font-size: 14px; color: #cdbf9d; }
+.gearGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-width: 420px; margin: 10px auto; }
+.gear { position: relative; font-size: 40px; text-align: center; padding: 10px 0; border-radius: 8px; background: #221a12; overflow: hidden; user-select: none; cursor: pointer; filter: grayscale(1) brightness(1.4); }
+.gear.rusty { background: #4a2e18; filter: sepia(1) saturate(3) hue-rotate(-20deg); } .gear.ok { background: #1c2a1c; filter: none; cursor: default; }
+.gear .gearFill { position: absolute; left: 0; bottom: 0; width: 100%; height: 0; background: rgba(105,240,174,.35); pointer-events: none; }
+.mixRow { display: flex; gap: 30px; justify-content: center; align-items: flex-start; margin: 10px; }
+.mixCol { text-align: center; } .mixLbl { font-size: 13px; color: #cdbf9d; margin-bottom: 6px; }
+.flask { width: 90px; height: 130px; border-radius: 10px 10px 16px 16px; border: 3px solid #8a6a3a; box-shadow: inset 0 -8px 14px rgba(0,0,0,.4); }
+.mixBtns { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; width: 120px; }
+.mixB { color: #1a1008; font-weight: bold; border: 1px solid #000; } .mixReset { background: #3a2a1a; }
+.simonWrap { text-align: center; margin: 8px; } .simonChamber { font-size: 28px; color: #ffcf66; margin-bottom: 10px; }
+.simonGrid { display: grid; grid-template-columns: repeat(4, 56px); gap: 8px; justify-content: center; }
+.vial { width: 56px; height: 56px; border-radius: 8px; border: 2px solid #000; opacity: .55; transition: opacity .1s, transform .1s; } .vial.lit { opacity: 1; transform: scale(1.1); box-shadow: 0 0 18px #fff; }
+.pourWrap { text-align: center; margin: 10px; user-select: none; } .pourTube { position: relative; width: 90px; height: 220px; margin: 0 auto; border: 3px solid #8a6a3a; border-radius: 8px; background: #15110c; overflow: hidden; cursor: pointer; }
+.pourFill { position: absolute; left: 0; bottom: 0; width: 100%; height: 0; background: linear-gradient(#e0a030,#ffcf66); }
+.pourSweet { position: absolute; left: 0; width: 100%; background: rgba(105,240,174,.3); border-top: 1px dashed #69f0ae; border-bottom: 1px dashed #69f0ae; }
