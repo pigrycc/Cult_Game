@@ -268,6 +268,7 @@ export class Bots {
         const pt = (p.hold && p.hold.uid === inst.uid ? pts.find(q => q.id === p.hold.target) : null) || free[0];
         return pt && { pos: pt, kind: 'use', id: pt.id };
       }
+      case 'collect': { const pt = pts[0]; return pt && { pos: pt, kind: 'collect', id: pt.id }; }
       default: return null;
     }
   }
@@ -293,6 +294,18 @@ export class Bots {
       input.yaw = Math.atan2(-(27 - p.body.x), -(8.3 - p.body.z));
       B.t -= dt;
       if (B.t <= 0) { T.answerRunes(p, inst.uid, inst.data.rune); B.t = rand(1.4, 2.4); }
+      return;
+    }
+    // Minigame hold tasks (scrub) and the collect/sorting tasks: a bot "plays" them for a short beat at the station,
+    // then finishes abstractly (bots never open the 2D overlay). botComplete still enforces the tool requirement.
+    if (d.game || d.mech === 'collect') {
+      const pt = m.tasks.mainPoint(inst);
+      if (dist2(p.body, pt) > USE_RANGE + 0.5) { B.state = 'go'; B.goal = null; return; }
+      input.yaw = Math.atan2(-(pt.x - p.body.x), -(pt.z - p.body.z));
+      if (!m.tasks.botMayWork(p, inst)) { B.state = 'tool'; return; }      // scrub still needs its tool
+      p.botWorking = true;
+      B.t -= dt;
+      if (B.t <= 0) { if (!m.tasks.botComplete(p, inst)) { B.t = rand(1, 2); } else { B.state = 'pick'; B.task = null; B.toolId = null; } }
       return;
     }
     const tgt = this.nextTarget(p, inst);

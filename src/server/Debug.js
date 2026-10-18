@@ -2,7 +2,7 @@
 //  DEVELOPER DEBUG SUITE — server-side command handlers (host-authorised).
 //  The client overlay (F1) sends {t:'debug', cmd, a:{...}}.
 // ============================================================================
-import { PHASE, CER, FACTIONS, ROLE_BY_ID, CURSES, MILESTONE_EVENTS, DEFAULT_TIMERS } from '../shared/constants.js';
+import { PHASE, CER, FACTIONS, ROLE_BY_ID, CURSES, CURSE_KEYS, MILESTONE_EVENTS, DEFAULT_TIMERS } from '../shared/constants.js';
 import { TASKS } from '../shared/tasks.js';
 
 export class Debug {
@@ -122,6 +122,14 @@ export class Debug {
       }
       case 'reset_timers': m.timers = { ...DEFAULT_TIMERS }; m.dbg.workSec = null; m.dbg.holdMul = 1; m.dbg.debateSec = null; return ok('All timers reset to defaults');
       case 'extended_curses': m.dbg.extendedCurses = !!a.on; return ok(`Extended curses (Call of the Abyss, Dark Initiation) in random pool: ${a.on ? 'ON' : 'OFF'}`);
+      case 'curse_weights': {
+        // a.weights = { CURSE_KEY: number } relative spawn odds; a.on=false clears the override (back to uniform)
+        if (a.on === false || !a.weights) { m.dbg.curseWeights = null; return ok('Curse odds: uniform (default)'); }
+        const w = {};
+        for (const k of CURSE_KEYS) if (a.weights[k] != null && isFinite(+a.weights[k])) w[k] = Math.max(0, Math.min(100, +a.weights[k]));
+        m.dbg.curseWeights = w;
+        return ok(`Curse odds updated: ${CURSE_KEYS.filter(k => w[k] != null).map(k => `${CURSES[k].name} ${w[k]}`).join(', ')}`);
+      }
       case 'teleport': if (target && isFinite(+a.x) && isFinite(+a.z)) { Object.assign(target.body, { x: +a.x, y: 0, z: +a.z, vx: 0, vy: 0, vz: 0 }); m.send(target.id, { t: 'teleport', x: +a.x, z: +a.z, yaw: target.body.yaw }); ok(`${target.name} teleported (keeps held tool)`); } return;
       case 'note': return ok(String(a.text || '').slice(0, 120));
       case 'reset_overrides': {
@@ -140,7 +148,7 @@ export class Debug {
       freezeRed: d.freezeRed, redX: d.redX, redT: d.redT, yellowMul: d.yellowMul, debateSec: d.debateSec, debateInfinite: d.debateInfinite,
       maxConcurrent: d.maxConcurrent, mutinyThreshold: d.mutinyThreshold, forcedEvent: d.forcedEvent, botMode: d.botMode, botSpeed: d.botSpeed, botDecisionDelaySeconds: d.botDecisionDelaySeconds, botChat: d.botChat, destabilizationTriggersChaosWin: !!d.destabilizationTriggersChaosWin, simplified: !!d.simplified, roleDropPct: d.roleDropPct, simpleEvents: !!d.simpleEvents, eliminateSec: d.eliminateSec, inLobby: this.m.phase === PHASE.LOBBY, matchSimple: !!this.m.simple, noSprint: d.noSprint, shoveDropPct: d.shoveDropPct,
       timeScale: this.m.timeScale, debugAll: d.debugAll, forcedNpcs: d.forcedNpcs,
-      timers: this.m.timers, workSec: d.workSec, holdMul: d.holdMul, extendedCurses: d.extendedCurses, workDefault: this.m.balance.work, debateDefault: this.m.balance.debate,
+      timers: this.m.timers, workSec: d.workSec, holdMul: d.holdMul, extendedCurses: d.extendedCurses, curseWeights: d.curseWeights, workDefault: this.m.balance.work, debateDefault: this.m.balance.debate,
     };
   }
 }

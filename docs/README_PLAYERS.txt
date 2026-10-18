@@ -52,6 +52,16 @@ YOUR TASK LIST (Work Phase)
   couple of seconds. A co-op chore names a suggested partner, but ANY two minions who work the station together finish
   it — press H to call the whole crew for help if your partner wanders off.
 
+TASK MINIGAMES (new)
+  Some chores now open a quick 2D minigame when you press E with the right tool:
+    • Scrub (Clean Soot, Sweep Glass, Mop Lard, Polish Runic Tablet [Rag]) — hold LMB and wipe the grime until ~90% clear.
+  Sorting chores (Replace Altar Candles, Sort Glowing Specimens, Sort Scrap Metal) — carry each item from its crate to a
+  glowing slot (E). More minigames are coming in a later update.
+
+DEBUG: CURSE ODDS (host, F1 → Ceremony & Altar → "Curse spawn odds")
+  A slider per curse glyph sets its relative spawn weight (0 = never). Tilt the odds to test a specific curse, or
+  "Uniform" to reset. Only curses in the active pool can appear (Simplified Mode uses its 3; extended curses need their toggle).
+
 DEDICATED / HEADLESS HOST (optional)
   dedicated-server.cjs runs with Node.js 20+:  node dedicated-server.cjs 7777 --debug-all
   Players join it normally; the first human to join becomes the host (START button, F1 debug).

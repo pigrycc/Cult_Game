@@ -553,6 +553,57 @@ export class UI {
     $('#fno', m).onclick = () => { onReply(false); this.modalOpen = false; m.classList.add('hidden'); };
   }
 
+  // ------------------------------------------------------------------ 2D minigames (CSV task overhaul)
+  /** Dispatch to the right minigame overlay by m.game. Each calls onDone() exactly once on success. */
+  minigame(m, onDone) {
+    if (m.game === 'scrub') return this.scrubGame(m, onDone);
+    onDone();                                       // unknown game type → trust completion (forward-compatible)
+  }
+
+  /**
+   * SCRUB: hold LMB and wipe the mouse over a dirty surface (soot / lard / dust) like an eraser until ~90% is clear.
+   * Pure canvas; reports success to the server which stays authoritative (range + tool + min-time checked there).
+   */
+  scrubGame(m, onDone) {
+    const cfg = m.cfg || {}, need = cfg.threshold ?? 0.9;
+    const palette = { soot: '#2b2b2b', lard: '#d8c47a', dust: '#8a8673' }[cfg.dirty] || '#2b2b2b';
+    const el = this.modal(`<h3>🧽 ${esc(m.name)}</h3><p class="small">Hold the left mouse button and scrub over the grime until it's clean.</p>
+      <div class="scrubWrap"><canvas id="scrubC" width="520" height="320"></canvas><div class="scrubBar"><div id="scrubFill"></div></div><div class="scrubPct" id="scrubPct">0%</div></div>`, { wide: true, onClose: () => { done = true; } });
+    const cv = $('#scrubC', el), ctx = cv.getContext('2d');
+    // paint a grimy layer with mottled texture
+    ctx.fillStyle = palette; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.globalAlpha = 0.5; for (let i = 0; i < 160; i++) { ctx.fillStyle = Math.random() < 0.5 ? '#000' : '#5a5a5a'; const r = 6 + Math.random() * 22; ctx.beginPath(); ctx.arc(Math.random() * cv.width, Math.random() * cv.height, r, 0, 7); ctx.fill(); }
+    ctx.globalAlpha = 1;
+    let painting = false, done = false, last = null;
+    const brush = 26;
+    const small = document.createElement('canvas'); small.width = 64; small.height = 40; const sctx = small.getContext('2d');
+    const sample = () => {               // fraction cleaned, measured on a cheap 64×40 downscale of the canvas
+      sctx.clearRect(0, 0, 64, 40); sctx.drawImage(cv, 0, 0, 64, 40);
+      const data = sctx.getImageData(0, 0, 64, 40).data; let clear = 0;
+      for (let i = 3; i < data.length; i += 4) if (data[i] < 40) clear++;
+      return clear / (64 * 40);
+    };
+    const wipe = (x, y) => {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath(); ctx.arc(x, y, brush, 0, 7); ctx.fill();
+      if (last) { ctx.lineWidth = brush * 2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(x, y); ctx.stroke(); }
+      ctx.globalCompositeOperation = 'source-over'; last = { x, y };
+    };
+    const at = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; };
+    cv.onmousedown = e => { painting = true; last = null; const p = at(e); wipe(p.x, p.y); };
+    cv.onmousemove = e => { if (painting) { const p = at(e); wipe(p.x, p.y); } };
+    window.addEventListener('mouseup', () => { painting = false; last = null; });
+    const tick = () => {
+      if (done) return;
+      const frac = sample();
+      $('#scrubFill', el).style.width = Math.min(100, frac / need * 100) + '%';
+      $('#scrubPct', el).textContent = Math.min(100, Math.round(frac / need * 100)) + '%';
+      if (frac >= need) { done = true; onDone(); this.closeModal(); return; }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   // ------------------------------------------------------------------ finale & scoreboard
   finale(msg, isHost, onLobby) {
     const el = $('#finale'); el.classList.remove('hidden');

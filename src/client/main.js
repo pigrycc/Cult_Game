@@ -38,6 +38,7 @@ async function connect(url, name, token) {
     recipe: m => ui.recipeCard(m),
     calibUI: m => ui.calib(m, amounts => net.send({ t: 'calib', uid: m.uid, amounts })),
     runesUI: m => ui.runes(m, choice => net.send({ t: 'runes', uid: m.uid, choice })),
+    minigame: m => ui.minigame(m, () => net.send({ t: 'minigameDone', uid: m.uid, part: m.part })),
     spyhole: m => ui.spyhole(m),
     fanaticalOffer: m => ui.fanatical(m, accept => net.send({ t: 'fanatical', accept })),
     converted: m => ui.big('🔮 You have been initiated', `You now secretly serve the Cult of Chaos. Your leader: ${m.leader}`, 5, '#b06bff'),
