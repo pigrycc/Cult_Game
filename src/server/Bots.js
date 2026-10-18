@@ -159,10 +159,14 @@ export class Bots {
     const m = this.m, B = p.brain, real = m.dbg.botMode === 'human';
     const held = m.tasks.heldToolType(p);
     const opts = [];
+    // Personal lists: a bot works ITS OWN assigned tasks first; only if it has none does it fall back to anything
+    // interactable (covers the brief window before reassign() tops it up).
+    const mine = [...m.tasks.active.values()].some(t => (t.assignedTo || []).includes(p.id) && (t.def.mech !== 'coop' || true));
     for (const t of m.tasks.active.values()) {
       if (real && !REAL_MECH.has(t.def.mech)) continue;
       if ((B.skip?.get(t.uid) ?? 0) > m.time) continue;
       if (this.isClaimed(t.uid, p)) continue;
+      if (mine && !(t.assignedTo || []).includes(p.id)) continue;    // stick to my own list when I have one
       const pt = m.tasks.mainPoint(t);
       let cost = dist2(p.body, pt);
       const need = t.def.tool;

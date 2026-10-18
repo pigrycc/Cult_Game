@@ -448,21 +448,6 @@ export class Ceremony {
   /** Simplified Insight Eye is used by the Master (who presided over the sacrifice); classic: the Executioner. */
   eyeHolder() { return this.m.simple ? (this.presidingMaster ?? this.m.masterId) : this.m.execId; }
 
-  /** Simplified Dark Initiation: the Executioner turns Chaos (unless immune / already Chaos). Secret either way. */
-  initiateExec() {
-    const m = this.m, e = this.E, L = m.P(m.chaosLeaderId);
-    if (!e) return 'Dark Initiation: there was no Executioner to claim.';
-    if (e.faction === FACTIONS.CHAOS) m.toast(e.id, '🔮 The darkness recognises one of its own.');
-    else if (e.immuneChaos) m.toast(e.id, '🛡️ The darkness reaches for you — your Chaos Immunity holds!');
-    else {
-      e.faction = FACTIONS.CHAOS;
-      const chaos = m.list.filter(p => p.faction === FACTIONS.CHAOS);
-      for (const a of chaos) for (const b of chaos) if (a !== b) a.known.set(b.id, FACTIONS.CHAOS);
-      m.send(e.id, { t: 'converted', leader: L?.name ?? '?' });
-    }
-    return `Dark Initiation: the darkness reached for Executioner ${e.name} — nobody knows whether it took hold.`;
-  }
-
   /** A new Master inherits full inspection of the captives queued on the altar by the predecessor. */
   grantAltarVision(p) {
     if (!p) return;
@@ -565,7 +550,7 @@ export class Ceremony {
       case 'TOXIC_FUMES': return this.toxicFumes();
       case 'EYE_OF_TRUTH': return m.simple ? `Insight Eye: Master ${this.M?.name ?? '?'} may strike one minion to privately learn their cult.` : `Insight Eye: Executioner ${en} may strike one minion to privately learn their cult.`;
       case 'CALL_OF_ABYSS': return `Call of the Abyss: Master ${this.M?.name ?? '?'} hands the Prison key to one minion.`;
-      case 'DARK_INITIATION': return m.simple ? this.initiateExec() : 'Dark Initiation: the Chaos Leader acts in the dark…';
+      case 'DARK_INITIATION': return 'Dark Initiation: the Chaos Leader acts in the dark…';
       default: return `${CURSES[curse]?.name ?? curse}: no effect.`;
     }
   }
@@ -584,7 +569,6 @@ export class Ceremony {
         if (mm) { this.setSub(CER.CURSE, m.timers.abyss, 'abyss'); m.bigAll('🗝️ Call of the Abyss', `${mm.name} hands the Prison key to one minion (LMB)`, 3, '#7fe0ff'); return; }
         break;
       case 'DARK_INITIATION': {
-        if (m.simple) break;                                   // already resolved on the Executioner
         const L = m.P(m.chaosLeaderId);
         if (L && !L.ghost && this.initiationCandidates().length) {
           this.setSub(CER.CURSE, m.timers.initiation, 'initiation');

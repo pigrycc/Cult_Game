@@ -115,7 +115,7 @@ export const SIMPLE_ROLES = [
   { id: 110, simple: true, name: 'Taskmaster', icon: '⏳', windows: ['VOTE'], targets: [{ label: 'Player who becomes Exhausted', filter: 'not_exhausted' }],
     desc: 'Choose a player. They become Exhausted immediately.' },
   { id: 111, simple: true, name: 'Exorcist', icon: '🕯️', windows: ['VOTE'], targets: [{ label: 'Player who gains Chaos Immunity', filter: 'any' }],
-    desc: 'Choose a player. They gain Chaos Immunity for the rest of the match.' },
+    desc: 'Choose a player. They gain Chaos Immunity for the rest of the match. (can be used on players that already have chaos as their faction to confuse players)' },
   { id: 112, simple: true, name: 'Jailer', icon: '🗝️', windows: ['VOTE'], targets: [],
     desc: 'Privately see the faction of current captives. Then choose to either KEEP them or RESPAWN 3 new ones (factions of new ones are unknown to you).' },
   { id: 113, simple: true, name: 'Mirror Mage', icon: '🪞', windows: ['VOTE'], targets: [],
@@ -191,7 +191,7 @@ export const EXTENDED_CURSES = ['CALL_OF_ABYSS', 'DARK_INITIATION'];
 // Simplified Mode: only these three glyphs exist, with mode-specific effects.
 export const SIMPLE_CURSES = ['DARK_INITIATION', 'TOXIC_FUMES', 'EYE_OF_TRUTH'];
 export const SIMPLE_CURSE_DESC = {
-  DARK_INITIATION: 'The Executioner is converted to the Cult of Chaos (unless immune to Chaos).',
+  DARK_INITIATION: 'The Chaos Leader secretly converts one chosen player to the Cult of Chaos (unless immune).',
   TOXIC_FUMES: 'The Master is overthrown for the next round; the Master & Executioner become drunk.',
   EYE_OF_TRUTH: 'The Master of Ceremonies privately learns the true faction of one chosen player.',
 };

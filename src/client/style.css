@@ -41,9 +41,15 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 
 /* ---------- task board ---------- */
 #taskBoard { position: absolute; top: 10px; left: 10px; width: 380px; background: rgba(12,9,7,.72); border: 1px solid #5a4430; border-radius: 6px; padding: 8px 10px; font-size: 13px; }
-.tbTitle { font-weight: bold; color: #ffcf66; margin-bottom: 4px; letter-spacing: 1px; }
+.tbTitle { font-weight: bold; color: #ffcf66; margin: 6px 0 4px; letter-spacing: 1px; }
+.tbTitle:first-child { margin-top: 0; }
+.tbTitle.coop { color: #9ff4ff; }
+.tbHint { font-weight: normal; font-size: 10px; opacity: .7; letter-spacing: 0; }
 .tbRow { margin: 3px 0; }
 .tbRow.coop { color: #9ff4ff; }
+.tbRow.called { opacity: .9; border-left: 2px solid #ff6b6b; padding-left: 4px; }
+.tbWith { font-size: 11px; opacity: .9; } .tbMate { font-size: 12px; color: var(--c); margin-right: 1px; }
+.tbHelp { color: #ff6b6b; font-size: 11px; font-weight: bold; animation: talkPulse .6s ease-in-out infinite alternate; }
 .tbSw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; box-shadow: 0 0 6px currentColor; vertical-align: -1px; }
 .tbTool { font-size: 11px; }
 .tbTag { color: #c8b890; font-size: 11px; }

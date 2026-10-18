@@ -115,6 +115,7 @@ export class GameServer {
       case 'fanatical': m.cer.fanaticalReply(p, !!msg.accept); break;
       case 'calib': m.tasks.answerCalib(p, +msg.uid, msg.amounts); break;
       case 'runes': m.tasks.answerRunes(p, +msg.uid, +msg.choice); break;
+      case 'callhelp': m.tasks.callForHelp(p, +msg.uid); break;
       case 'chat': m.chat(p, msg.text); break;
       case 'debug': m.debug.run(p, String(msg.cmd), msg.a || {}); break;
       case 'lobby': m.returnToLobby(p.id); break;
@@ -230,7 +231,7 @@ export class GameServer {
       track: m.simple && !m.dbg.simpleEvents ? (m.track || []).map(k => (k === 'FINAL' ? k : 'EMPTY')) : m.simple ? (m.track || []).map(k => (k === 'RENEWAL' ? 'EMPTY' : k)) : m.track,
       simple: m.phase === PHASE.LOBBY ? !!m.dbg.simplified : !!m.simple,
       roleDropPct: m.dbg.roleDropPct, usedRoles: m.simple ? [...(m.usedRoles || [])] : [],
-      tasks: m.phase === PHASE.LOBBY ? [] : m.tasks.serializeTasks(),
+      tasks: m.phase === PHASE.LOBBY ? [] : m.tasks.serializeTasks(v),
       world: m.tasks.serializeWorld(),
       npcs: m.npcs.serialize(v),
       spy: { active: m.npcs.spyActive, id: m.npcs.spyId, t: r2(m.npcs.spyT), visited: m.npcs.masterVisited, n: m.npcs.spyN || 0 },

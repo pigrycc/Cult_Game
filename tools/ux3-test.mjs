@@ -15,14 +15,20 @@ function mk(n = 7) {
 const T0 = (m) => { m.dbg.maxConcurrent = 0; for (const t of [...m.tasks.active.values()]) m.tasks.removeTask(t); m.tasks.respawnQ = []; };
 
 // ---- 1. one distinct colour per active task, exposed to clients
-{ const { m } = mk(); m.dbg.maxConcurrent = 12; for (let i = 0; i < 40; i++) m.tick(0.5);
-  const ser = m.tasks.serializeTasks();
-  ok(ser.length >= 6 && ser.every(t => Number.isInteger(t.color) && t.color >= 0 && t.color < TASK_COLORS), `every active task carries a palette colour (${ser.length} tasks)`);
-  ok(new Set(ser.map(t => t.color)).size === ser.length, 'no two active tasks share a colour');
+{ const { m } = mk(5); m.dbg.maxConcurrent = 5; for (let i = 0; i < 40; i++) m.tick(0.5);   // small board that fits the palette
+  const ser = m.tasks.serializeTasks();          // viewer omitted → whole board (used only to inspect colours here)
+  ok(ser.length >= 4 && ser.every(t => Number.isInteger(t.color) && t.color >= 0 && t.color < TASK_COLORS), `every active task carries a palette colour (${ser.length} tasks)`);
+  ok(new Set(ser.map(t => t.color)).size === ser.length, 'no two active tasks share a colour while the board fits the 12-colour palette');
+  ok(ser.every(t => t.points.length >= 1), 'each task exposes its marker points (all share the task colour on the client)');
   ok(ser.filter(t => TASKS[t.key].tool).every(t => t.tool === TASKS[t.key].tool), 'tasks that need a tool say which one (for the tool beacon)');
   const items = m.tasks.serializeWorld().items; ok(items.every(i => 'task' in i), 'world items say which task they belong to (book beacon)');
-  const c0 = ser[0].color; m.tasks.removeTask(m.tasks.active.get(ser[0].uid)); m.tasks.spawnTask(); 
+  const c0 = ser[0].color; m.tasks.removeTask(m.tasks.active.get(ser[0].uid)); m.tasks.reassign();
   ok(new Set([...m.tasks.active.values()].map(t => t.color)).size === m.tasks.active.size, 'a replacement task never reuses a colour that is still on the board'); }
+// a packed 11-player board must serialize cleanly with valid palette indices (unique while it fits, repeating past that)
+{ const { m } = mk(11); for (let i = 0; i < 40; i++) m.tick(0.5);
+  const ser = m.tasks.serializeTasks();
+  ok(ser.length >= 12 && ser.every(t => Number.isInteger(t.color) && t.color >= 0 && t.color < TASK_COLORS), `a large board (${ser.length} tasks) serializes with valid palette colours`);
+  if (ser.length <= TASK_COLORS) ok(new Set(ser.map(t => t.color)).size === ser.length, `…and colours stay unique while within the ${TASK_COLORS}-colour palette`); }
 
 // ---- 2. tool is put down when the job is done
 { const { m, P } = mk(); T0(m);

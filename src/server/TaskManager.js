@@ -51,12 +51,16 @@ export class TaskManager {
   unjam(dt) {
     this.unjamT = (this.unjamT ?? 0) - dt;
     if (this.unjamT > 0) return;
-    this.unjamT = 3;
+    this.unjamT = 1.5;
     const crew = this.botCrew();
     if (!crew || this.poolSize < 1 || this.active.size === 0 || this.active.size < this.poolSize) return;
     const all = [...this.active.values()];
     if (all.some(t => this.botDoable(t.def, crew))) return;
-    const idle = all.filter(t => t.progress === 0 && t.rep === 0 && t.participants.size === 0 && this.m.time - t.born > 15
+    // Nothing on a full board is bot-doable. Retire the oldest UNTOUCHED refused chore so a doable one can spawn.
+    // When the WHOLE board is refused chores (e.g. a 1-task cap) act fast (3 s) — otherwise be patient (15 s) in case a
+    // human is on the way to it.
+    const grace = all.every(t => !this.botDoable(t.def, crew)) ? 3 : 15;
+    const idle = all.filter(t => t.progress === 0 && t.rep === 0 && t.participants.size === 0 && this.m.time - t.born > grace
       && !this.m.list.some(p => p.hold?.uid === t.uid || p.carryHandle?.uid === t.uid) && !(t.data.holders && t.data.holders.some(Boolean)));
     if (!idle.length) return;
     idle.sort((a, b) => a.born - b.born);
@@ -67,36 +71,107 @@ export class TaskManager {
       this.m.log(`The crypt shuffles its chores: "${victim.def.name}" was retired (no minion could take it).`);
       this.removeTask(victim); n++;
     }
-    if (n) this.respawnQ.push(0.5);
+    if (n) { this.replenishT = 0.5; this.reassign(); }        // refill the freed slot right away with bot-doable work
   }
 
   /** Hold duration after the debug multiplier. */
   need(sec) { return sec * (this.m.dbg.holdMul ?? 1); }
 
-  get poolSize() { return this.m.dbg.maxConcurrent ?? this.m.balance.pool; }
+  // ============================================================ PERSONAL TASK LISTS
+  // Each living, non-ghost minion owns a short personal list: SOLO_PER (2) solo tasks + a share of ONE co-op task.
+  // Tasks still live in the single `active` map (so completion / hazards / jam logic are unchanged); `assignedTo` is the
+  // list of player ids the task appears for, and `kind` is 'solo' or 'coop'. The board size is derived from the roster,
+  // not a fixed pool, so nobody sees a 9-task wall. `maxConcurrent` (debug) still caps the TOTAL number of live tasks.
+  get SOLO_PER() { return 2; }
+  /** Players who should receive personal tasks right now (alive, not ghosts, in the work phase). */
+  assignees() { return this.m.list.filter(p => !p.ghost); }
+  /** How many solo + co-op slots the current roster wants (ignoring the debug cap). */
+  wantSolo() { return this.assignees().length * this.SOLO_PER; }
+  wantCoopTasks() { return Math.max(1, Math.round(this.assignees().length / 2)); }    // ~1 co-op task per 2 minions
+  /** Hard cap on how many tasks may be live at once (debug override still wins). */
+  get poolSize() { return this.m.dbg.maxConcurrent ?? Math.min(this.m.balance.pool + 8, this.wantSolo() + this.wantCoopTasks() + 2); }
+  coopSeats(def) { return def.type === 'coop3' ? 3 : 2; }
 
-  fillPool() {
-    let guard = 0;
-    while (this.active.size < this.poolSize && guard++ < 50) if (!this.spawnTask()) break;
+  /** True when `p` sees this task on their personal list: it is assigned to them, it is still-unassigned legacy state,
+   *  or a teammate has "called for help" on this co-op task (then it is shown to the whole crew). */
+  assignedToPlayer(inst, pid) {
+    if (!inst.assignedTo || inst.assignedTo.length === 0) return true;
+    if (inst.assignedTo.includes(pid)) return true;
+    if (inst.helpCall && inst.kind === 'coop') return true;
+    return false;
   }
 
-  spawnTask(forceKey = null) {
+  fillPool() { this.reassign(); }
+
+  /**
+   * Keep every assignee stocked with SOLO_PER solo tasks + membership in one co-op task. Called on a short cadence from
+   * tick() and immediately after a completion. Never exceeds poolSize; respects the bot-doable floor so a bots-only crew
+   * is never handed a board of chores it refuses.
+   */
+  reassign() {
+    if (this.m.phase !== PHASE.WORK) return;
+    const live = this.assignees();
+    const liveIds = new Set(live.map(p => p.id));
+    // Drop assignments for players who left / died.
+    for (const inst of this.active.values()) if (inst.assignedTo) inst.assignedTo = inst.assignedTo.filter(id => liveIds.has(id));
+
+    const crew = this.botCrew();
+    const soloCount = p => [...this.active.values()].filter(t => t.kind === 'solo' && t.assignedTo.includes(p.id)).length;
+
+    // When a Humanlike bot crew exists, give the BOTS their solo (bot-doable) work FIRST. A tiny debug "max tasks" cap must
+    // never be filled with co-op / refused chores before the bots get something they can actually do, or the match stalls.
+    if (crew > 0) {
+      for (const p of live.filter(q => q.isBot)) {
+        let guard = 0;
+        while (soloCount(p) < this.SOLO_PER && this.active.size < this.poolSize && guard++ < 20) {
+          if (!this.spawnTask(null, 'solo', p)) break;
+        }
+      }
+    }
+
+    // ----- co-op: enough co-op tasks exist and each assignee is a member of one (co-op needs ≥2 bots to be bot-doable) -----
+    if (crew === 0 || crew >= 2 || live.some(p => !p.isBot)) {
+      let coop = [...this.active.values()].filter(t => t.kind === 'coop');
+      const coopMembers = new Set(coop.flatMap(t => t.assignedTo));
+      const needCoopMembers = live.filter(p => !coopMembers.has(p.id));
+      while (needCoopMembers.length && this.active.size < this.poolSize) {
+        let host = coop.find(t => t.assignedTo.length < this.coopSeats(t.def));
+        if (!host) { host = this.spawnTask(null, 'coop'); if (!host) break; coop.push(host); }
+        const seats = this.coopSeats(host.def) - host.assignedTo.length;
+        for (let i = 0; i < seats && needCoopMembers.length; i++) host.assignedTo.push(needCoopMembers.shift().id);
+      }
+    }
+
+    // ----- solo: top every assignee (humans first now, bots already done) up to SOLO_PER -----
+    for (const p of live) {
+      let guard = 0;
+      while (soloCount(p) < this.SOLO_PER && this.active.size < this.poolSize && guard++ < 20) {
+        if (!this.spawnTask(null, 'solo', p)) break;
+      }
+    }
+    // keep the lard puddle task honest
+    if (this.lard.size === 0) for (const t of [...this.active.values()]) if (t.def.lard) this.removeTask(t);
+  }
+
+  /**
+   * Add one task to the board. `kind` ('solo'|'coop') steers the catalogue filter; `owner` (a player) is pre-assigned to
+   * a fresh solo task. Returns the instance, or false when nothing suitable is free.
+   */
+  spawnTask(forceKey = null, kind = null, owner = null) {
     const activeKeys = new Set([...this.active.values()].map(t => t.key));
     let key = forceKey;
     if (!key) {
-      const coopActive = [...this.active.values()].filter(t => t.def.type !== 'solo').length;
-      const wantCoop = coopActive < Math.max(2, Math.round(this.poolSize * 0.3));
+      const wantCoop = kind === 'coop';
       let cands = TASK_KEYS.filter(k => !activeKeys.has(k) && (k !== 'mop' || this.lard.size > 0));
-      // A bots-only crew must always have work it can really do (otherwise the tasks they refuse fill every slot and the
-      // match stalls — most visible with a small "max concurrent tasks"). Keep ≥40 % of the board bot-doable.
+      if (kind) { const typed = cands.filter(k => (TASKS[k].type !== 'solo') === wantCoop); if (typed.length) cands = typed; }
+      // A bots-only crew must always get work it can really do (otherwise the tasks they refuse fill every slot and the
+      // match stalls). For a solo task they will be assigned, keep it bot-doable.
       const crew = this.botCrew();
-      if (crew > 0) {
-        const doable = d => this.botDoable(d, crew);
-        const have = [...this.active.values()].filter(t => doable(t.def)).length;
-        if (have < Math.max(1, Math.round(this.poolSize * 0.4))) { const only = cands.filter(k => doable(TASKS[k])); if (only.length) cands = only; }
+      if (crew > 0 && owner?.isBot && kind === 'solo') { const only = cands.filter(k => this.botDoable(TASKS[k], crew)); if (only.length) cands = only; }
+      else if (crew > 0 && kind !== 'coop') {
+        const have = [...this.active.values()].filter(t => this.botDoable(t.def, crew)).length;
+        if (have < Math.max(1, Math.round(this.poolSize * 0.4))) { const only = cands.filter(k => this.botDoable(TASKS[k], crew)); if (only.length) cands = only; }
       }
-      const typed = cands.filter(k => (TASKS[k].type !== 'solo') === wantCoop);
-      if (typed.length) cands = typed;
       if (!cands.length) return false;
       key = pick(cands);
     } else if (activeKeys.has(key)) {
@@ -108,7 +183,9 @@ export class TaskManager {
     const usedC = new Set([...this.active.values()].map(t => t.color));
     let color = 0; while (usedC.has(color) && color < TASK_COLORS - 1) color++;
     if (usedC.has(color)) color = UID % TASK_COLORS;
-    const inst = { uid: UID++, key, def, rep: 0, progress: 0, participants: new Set(), data: {}, born: this.m.time, color };
+    const kindFinal = kind || (def.type === 'solo' ? 'solo' : 'coop');
+    const inst = { uid: UID++, key, def, rep: 0, progress: 0, participants: new Set(), data: {}, born: this.m.time, color,
+      kind: kindFinal, assignedTo: owner ? [owner.id] : [], helpCall: false };
     switch (def.mech) {
       case 'fetch':
         if (def.srcs) inst.data.items = def.srcs.map(s => this.makeItem(def.item, s.x, s.y ?? 0.1, s.z, inst.uid).id);
@@ -155,10 +232,20 @@ export class TaskManager {
     }
     for (const p of participants) this.m.maybeDropRole(p);          // Simplified Mode: chores may yield a role card
     this.removeTask(inst, 'done');
+    // Personal lists: a finished task frees its owners' slots. Refill after a short delay so the HUD doesn't flicker.
     this.respawnQ.push(this.m.timers.taskRespawnDelay);
     this.m.bars.addTaskProgress(1);
   }
   forceComplete(inst, participants = []) { this.complete(inst, participants); }
+
+  /** A player broadcasts a co-op task to the whole crew ("I need a partner here!"). It then shows for everyone. */
+  callForHelp(p, uid) {
+    const inst = this.active.get(+uid);
+    if (!inst || inst.kind !== 'coop' || !this.assignedToPlayer(inst, p.id)) return;
+    inst.helpCall = true;
+    const partners = inst.assignedTo.filter(id => id !== p.id).map(id => this.m.P(id)?.name).filter(Boolean);
+    this.m.toastAll(`🆘 ${p.name} needs help: ${inst.def.name} (${ROOM_TAGS[inst.def.room]})${partners.length ? ' — with ' + partners.join(' & ') : ''}`, 'info');
+  }
 
   // ---------------------------------------------------------------- bot support
   heldToolType(p) { return p.heldTool ? this.tools.get(p.heldTool)?.type ?? null : null; }
@@ -544,12 +631,9 @@ export class TaskManager {
   // ---------------------------------------------------------------- tick
   tick(dt) {
     this.unjam(dt);
-    // respawns
-    for (let i = this.respawnQ.length - 1; i >= 0; i--) {
-      this.respawnQ[i] -= dt;
-      if (this.respawnQ[i] <= 0) { this.respawnQ.splice(i, 1); if (this.active.size < this.poolSize) this.spawnTask(); }
-    }
-    if (this.active.size < this.poolSize && !this.respawnQ.length) this.respawnQ.push(this.m.timers.taskRespawnDelay);
+    // Personal task lists: top everyone up after the respawn delay (so a finished task's slot refills after 2–3 s).
+    this.replenishT = (this.replenishT ?? 0) - dt;
+    if (this.replenishT <= 0) { this.replenishT = this.m.timers.taskRespawnDelay; this.reassign(); }
 
     // holds
     for (const p of this.m.list) {
@@ -656,16 +740,29 @@ export class TaskManager {
   }
 
   // ---------------------------------------------------------------- serialization
-  serializeTasks() {
-    return [...this.active.values()].map(inst => ({
-      uid: inst.uid, key: inst.key, name: inst.def.name, room: inst.def.room, tag: ROOM_TAGS[inst.def.room], type: inst.def.type,
-      color: inst.color, tool: inst.def.tool || undefined,
-      coins: COIN_BY_TYPE[inst.def.type], progress: +inst.progress.toFixed(3), rep: inst.rep, reps: inst.def.reps || 1,
-      points: this.points(inst).map(q => ({ ...q, x: +q.x.toFixed(2), y: +(q.y ?? 1).toFixed(2), z: +q.z.toFixed(2) })),
-      rune: inst.def.mech === 'runes' ? inst.data.rune : undefined, wall: inst.def.wall,
-      obj: inst.data.obj ? { x: +inst.data.obj.x.toFixed(2), z: +inst.data.obj.z.toFixed(2) } : undefined,
-      holders: inst.data.holders, count: inst.data.count, seq: inst.data.seq ? inst.data.seq.length : undefined,
-    }));
+  /**
+   * Per-viewer: only the tasks on THIS player's personal list (their 2 solo + 1 co-op), plus any co-op task that a
+   * teammate has "called for help" on. Co-op entries carry their partners so the HUD can show "with 🔴 Bob".
+   */
+  serializeTasks(viewer = null) {
+    const out = [];
+    for (const inst of this.active.values()) {
+      if (viewer && !this.assignedToPlayer(inst, viewer.id)) continue;
+      const partners = inst.kind === 'coop' && viewer
+        ? inst.assignedTo.filter(id => id !== viewer.id).map(id => { const q = this.m.P(id); return q ? { name: q.name, color: q.color } : null; }).filter(Boolean)
+        : [];
+      out.push({
+        uid: inst.uid, key: inst.key, name: inst.def.name, room: inst.def.room, tag: ROOM_TAGS[inst.def.room], type: inst.def.type,
+        color: inst.color, tool: inst.def.tool || undefined, kind: inst.kind, partners, helpCall: !!inst.helpCall,
+        mine: viewer ? (inst.assignedTo || []).includes(viewer.id) : true,
+        coins: COIN_BY_TYPE[inst.def.type], progress: +inst.progress.toFixed(3), rep: inst.rep, reps: inst.def.reps || 1,
+        points: this.points(inst).map(q => ({ ...q, x: +q.x.toFixed(2), y: +(q.y ?? 1).toFixed(2), z: +q.z.toFixed(2) })),
+        rune: inst.def.mech === 'runes' ? inst.data.rune : undefined, wall: inst.def.wall,
+        obj: inst.data.obj ? { x: +inst.data.obj.x.toFixed(2), z: +inst.data.obj.z.toFixed(2) } : undefined,
+        holders: inst.data.holders, count: inst.data.count, seq: inst.data.seq ? inst.data.seq.length : undefined,
+      });
+    }
+    return out;
   }
   serializeWorld() {
     return {

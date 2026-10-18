@@ -30,7 +30,12 @@ export const TOOLS = {
 };
 
 /** One distinct colour per active task (index stored on the task). Markers, required tools and task items all share it. */
-export const TASK_PALETTE = ['#ff5252', '#40c4ff', '#ffd740', '#69f0ae', '#e040fb', '#ff9100', '#18ffff', '#b2ff59', '#ff80ab', '#8c9eff', '#ffffff', '#a1887f'];
+// 24 distinct marker colours — enough for a packed personal-task-list board (up to ~2 solo + co-op share per minion for
+// 11 players) to stay unique, so no two active tasks share a colour.
+export const TASK_PALETTE = [
+  '#ff5252', '#40c4ff', '#ffd740', '#69f0ae', '#e040fb', '#ff9100', '#18ffff', '#b2ff59', '#ff80ab', '#8c9eff', '#ffffff', '#a1887f',
+  '#f44336', '#2196f3', '#cddc39', '#00e676', '#9c27b0', '#ff6d00', '#1de9b6', '#aeea00', '#f06292', '#536dfe', '#bcaaa4', '#ffab40',
+];
 export const TASK_COLORS = TASK_PALETTE.length;
 
 export const TOOL_SPAWNS = [
