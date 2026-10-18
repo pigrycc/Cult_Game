@@ -12,8 +12,8 @@
 //   • Everyone, once a captive has been sacrificed (public tally)
 //   • Debug God Mode
 // ============================================================================
-import { CURSES, CORE_CURSES, EXTENDED_CURSES, FACTIONS, PHASE, CER } from '../shared/constants.js';
-import { NPC_SEATS, ALTAR_SPOTS, PRISON_SPOTS, PORTAL, roomAt } from '../shared/map.js';
+import { CURSES, CORE_CURSES, EXTENDED_CURSES, SIMPLE_CURSES, FACTIONS, PHASE, CER } from '../shared/constants.js';
+import { NPC_SEATS, ALTAR_SPOTS, PRISON_SPOTS, PORTAL, LINE_SPOTS, roomAt } from '../shared/map.js';
 import { weighted, pick, dist2, shuffle } from './util.js';
 
 let NID = 1;
@@ -31,7 +31,7 @@ export class NpcSystem {
   draw(forced = null) {
     const faction = forced?.faction || weighted([[FACTIONS.FIRE, 40], [FACTIONS.BLOOD, 40], [FACTIONS.CHAOS, 20]]);
     // Mandatory curse: there are no "vanilla" captives. Forced (debug) curses must be valid glyphs.
-    const pool = this.m.dbg.extendedCurses ? [...CORE_CURSES, ...EXTENDED_CURSES] : CORE_CURSES;
+    const pool = this.m.simple ? SIMPLE_CURSES : this.m.dbg.extendedCurses ? [...CORE_CURSES, ...EXTENDED_CURSES] : CORE_CURSES;
     const curse = forced?.curse && CURSES[forced.curse] ? forced.curse : pick(pool);
     const n = { id: NID++, faction, curse, state: 'reserve', x: 0, y: 0, z: 0, carrier: null, discard: null, round: this.m.ceremonyIndex };
     this.npcs.set(n.id, n);
@@ -46,6 +46,7 @@ export class NpcSystem {
   beginRound() {
     this.masterVisited = false;
     this.spyActive = false; this.spyId = null; this.spyPeeked = null;
+    if (this.m.simple) return;                                    // Simplified Mode: captives appear at the portal during the ceremony
     if (this.chamber().length + this.altar().length > 0) return; // resumed (debug)
     const forced = this.m.dbg.forcedNpcs;
     for (let i = 0; i < 3; i++) this.seat(this.draw(forced?.[i]), i);
@@ -210,8 +211,25 @@ export class NpcSystem {
     list.forEach((cfg, i) => { if (i < 4) this.seat(this.draw(cfg), i); });
   }
 
-  /** Remaining altar captive after a sacrifice → Prison (verifiable via spyhole). */
-  rejectRemaining() { for (const n of this.altar()) this.toPrison(n, 'exec'); }
+  /** Remaining altar captive after a sacrifice → Prison (verifiable via spyhole). Simplified Mode: into the abyss. */
+  rejectRemaining() { for (const n of this.altar()) { if (this.m.simple) this.toAbyss(n); else this.toPrison(n, 'exec'); } }
+
+  // ---------------------------------------------------------- Simplified Mode: captives on trapdoors at the portal
+  line() { return [...this.npcs.values()].filter(n => n.state === 'line'); }
+  /** Spawn 3 fresh captives, each on a trapdoor with a lever, directly in front of the portal (state 'line'). */
+  spawnLine(state = 'line') {
+    for (const n of [...this.npcs.values()]) if (['line', 'altar', 'chamber', 'ground', 'carried'].includes(n.state)) this.toAbyss(n, true);
+    const forced = this.m.dbg.forcedNpcs;
+    return LINE_SPOTS.map((s, i) => { const n = this.draw(forced?.[i]); Object.assign(n, { state, x: s.x, y: 0, z: s.z, spot: i, carrier: null }); return n; });
+  }
+  /** A trapdoor opens: the captive falls into the abyss (kept briefly so clients can animate the fall). */
+  toAbyss(n, silent = false) {
+    if (n.carrier) { const c = this.m.P(n.carrier); if (c) c.carryingNpc = null; }
+    Object.assign(n, { state: 'abyss', carrier: null, droppedAt: this.m.time, round: this.m.ceremonyIndex });
+    if (!silent) this.m.fx('trapdoor', { x: n.x, z: n.z });
+  }
+  /** After the Master's choice the two survivors stay where they stand and count as the altar pair. */
+  lineToAltar() { for (const n of this.line()) n.state = 'altar'; }
 
   spyhole(p) {
     const list = [...this.npcs.values()].filter(n => n.state === 'prison' && (n.discard === 'exec' || p.hasKey));
@@ -230,7 +248,8 @@ export class NpcSystem {
     const out = [];
     for (const n of this.npcs.values()) {
       if (n.state === 'reserve' || n.state === 'sacrificed') continue;
-      const e = { id: n.id, state: n.state, x: +n.x.toFixed(2), y: +n.y.toFixed(2), z: +n.z.toFixed(2), carrier: n.carrier };
+      if (n.state === 'abyss' && this.m.time - (n.droppedAt ?? -99) > 3) continue;   // fall animation over
+      const e = { id: n.id, state: n.state, x: +n.x.toFixed(2), y: +n.y.toFixed(2), z: +n.z.toFixed(2), carrier: n.carrier, spot: n.spot };
       if (this.authorized(viewer, n)) { e.faction = n.faction; e.curse = n.curse; }
       out.push(e);
     }

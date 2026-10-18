@@ -58,8 +58,10 @@ let failed = 0; const check = (c, msg) => { if (!c) failed++; console.log(c ? 'o
   check(await G(() => window.__game.me.tool === 'shovel'), 'picked up the shovel');
   await sleep(300); await shot('r3_02_fpp_shovel_empty');
   const coalT = await G(() => window.__game.st.tasks.find(t => t.key === 'coal'));
-  await D('teleport', { pid: await me(), x: coalT.points[0].x + 0.8, z: coalT.points[0].z }); await sleep(400);
-  await G(id => window.__game.net.send({ t: 'use', target: id }), coalT.points[0].id); await sleep(800);
+  for (let i = 0; i < 5 && !(await G(() => window.__game.me.load)); i++) {      // teleport + scoop (retried: a slow software-GL frame can land the scoop before the teleport)
+    await D('teleport', { pid: await me(), x: coalT.points[0].x + 0.8, z: coalT.points[0].z }); await sleep(700);
+    await G(id => window.__game.net.send({ t: 'use', target: id }), coalT.points[0].id); await sleep(900);
+  }
   const loaded = await G(() => window.__game.me.load); check(loaded === 'coal', 'scooped coal (loaded state: ' + loaded + ')');
   await sleep(300); await shot('r3_03_fpp_shovel_coal');
   const vm = await G(() => { const g = window.__game; const v = new (g.vmHeld.position.constructor)(); g.vmHeld.children[0].getWorldPosition(v); return { n: g.vmHeld.children[0].children.length, kids: g.vmHeld.children[0].children.filter(c => c.userData !== undefined).length }; });

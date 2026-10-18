@@ -1,16 +1,19 @@
 // Thin WebSocket client. JSON for game messages, binary for voice frames.
+// 'room:CODE' connects over the internet (WebRTC, see online.js) through the same interface.
+import { RoomSocket } from './online.js';
 export class Net {
   constructor() { this.ws = null; this.handlers = new Map(); this.onVoice = null; this.onClose = null; this.rtt = 0; }
 
   connect(url, hello) {
     return new Promise((resolve, reject) => {
       let settled = false;
-      const ws = new WebSocket(url);
+      const room = url.startsWith('room:');
+      const ws = room ? new RoomSocket(url.slice(5)) : new WebSocket(url);
       ws.binaryType = 'arraybuffer';
       this.ws = ws;
       ws.onopen = () => ws.send(JSON.stringify(hello));
-      ws.onerror = () => { if (!settled) { settled = true; reject(new Error('Could not reach ' + url)); } };
-      ws.onclose = () => { if (!settled) { settled = true; reject(new Error('Connection closed')); } else this.onClose && this.onClose(); };
+      ws.onerror = e => { if (!settled) { settled = true; reject(new Error(room ? (e?.message || 'Could not reach the room') : 'Could not reach ' + url)); } };
+      ws.onclose = () => { if (!settled) { settled = true; reject(new Error(ws.lastError || 'Connection closed')); } else this.onClose && this.onClose(); };
       ws.onmessage = ev => {
         if (typeof ev.data !== 'string') { this.onVoice && this.onVoice(ev.data); return; }
         const msg = JSON.parse(ev.data);

@@ -14,6 +14,7 @@ export class Roles {
 
   windowsNow() {
     const m = this.m, w = new Set();
+    if (m.simple) { if (m.phase === PHASE.CEREMONY && m.cer.sub === CER.VOTE) w.add('VOTE'); return w; }   // ONE shared window
     if (m.phase === PHASE.WORK) { w.add('WORK'); w.add('ANY'); }
     if (m.phase === PHASE.CEREMONY) {
       w.add('ANY');
@@ -34,6 +35,11 @@ export class Roles {
     if (p.ghost) return { ok: false, reason: 'Ghosts cannot use cards' };
     const w = this.windowsNow();
     if (!r.windows.some(x => w.has(x))) return { ok: false, reason: 'Not the right moment: ' + r.windows.join('/') };
+    if (r.simple) {
+      const sc = this.simpleCheck(p, r);
+      if (sc) return { ok: false, reason: sc };
+      return { ok: true };
+    }
     if (r.requiresMasterNotVisited && (m.npcs.masterVisited || m.npcs.spyActive)) return { ok: false, reason: 'The Master already visited the Selection Chamber' };
     if (r.requiresChaosSacrifice && !m.cer.chaosSacrificed) return { ok: false, reason: 'No Chaos captive was sacrificed this ceremony' };
     if (r.cost && p.crystals < r.cost) return { ok: false, reason: `Requires ${r.cost} Mana Crystal` };
@@ -44,10 +50,32 @@ export class Roles {
     return { ok: true };
   }
 
+  /** Extra preconditions of the Simplified cards (null = usable). */
+  simpleCheck(p, r, forCopy = false) {
+    const m = this.m, cer = m.cer;
+    if (r.needsVoter && !cer.isVoter(p)) return 'Only a voter can use this (not the Master or Executioner)';
+    const has = f => m.list.some(t => this.validTarget(p, f, t));
+    for (const tg of r.targets || []) if (!has(tg.filter)) return 'No valid target right now';
+    if (r.id === 112 && !m.npcs.altar().length) return 'There are no captives at the portal';
+    if (r.id === 113) {
+      if (forCopy) return 'The Mirror Mage cannot copy itself';
+      if (!this.copyable(p).length) return 'No used role card to copy yet';
+    }
+    return null;
+  }
+  /** Role ids the Mirror Mage may copy right now (already used this match and usable at this moment). */
+  copyable(p) {
+    const m = this.m;
+    return [...(m.usedRoles || [])].filter(id => id !== 113 && ROLE_BY_ID[id]?.simple && !this.simpleCheck(p, ROLE_BY_ID[id], true));
+  }
+
   validTarget(p, filter, t) {
     const m = this.m;
     if (!t) return false;
     switch (filter) {
+      case 'voter': return m.cer.isVoter(t);
+      case 'eligible_exec_new': return t.id !== m.execId && m.eligibleExec().includes(t);
+      case 'not_exhausted': return !t.ghost && !t.exhausted;
       case 'other': return t.id !== p.id && !t.ghost;
       case 'other_los': return t.id !== p.id && !t.ghost && dist2(p.body, t.body) < 30 && wallsBetween(p.body.x, p.body.z, t.body.x, t.body.z, 1) === 0;
       case 'rebel': return (m.cer.final.get(t.id) || 0) > 0 && !m.cer.pacified.has(t.id);
@@ -60,16 +88,23 @@ export class Roles {
     }
   }
 
-  use(p, targetIds = []) {
+  use(p, targetIds = [], copyId = null) {
     const m = this.m, r = ROLE_BY_ID[p.roleId];
     const c = this.check(p);
     if (!c.ok) return m.toast(p.id, `Cannot use ${r?.name ?? 'card'}: ${c.reason}`, 'warn');
-    const T = (r.targets || []).map((spec, i) => m.P(targetIds[i]));
-    for (let i = 0; i < (r.targets || []).length; i++) {
-      if (!this.validTarget(p, r.targets[i].filter, T[i])) return m.toast(p.id, `Invalid target for "${r.targets[i].label}".`, 'warn');
+    // Mirror Mage: the effect (and targets) of an already-used card
+    let eff = r;
+    if (r.id === 113) {
+      eff = ROLE_BY_ID[copyId];
+      if (!eff || !this.copyable(p).includes(eff.id)) return m.toast(p.id, 'Mirror Mage: pick a role card that was already used this match.', 'warn');
+    }
+    const T = (eff.targets || []).map((spec, i) => m.P(targetIds[i]));
+    for (let i = 0; i < (eff.targets || []).length; i++) {
+      if (!this.validTarget(p, eff.targets[i].filter, T[i])) return m.toast(p.id, `Invalid target for "${eff.targets[i].label}".`, 'warn');
     }
     this.m.toastTap = [];                                   // capture the public announcement the ability makes (= "what just happened")
-    const err = this.apply(p, r, T);
+    if (eff !== r) m.toastAll(`🪞 ${p.name}, the Mirror Mage, copies ${eff.icon} ${eff.name}!`);
+    const err = eff.simple ? this.applySimple(p, eff, T) : this.apply(p, r, T);
     const said = this.m.toastTap; this.m.toastTap = null;
     if (err) return m.toast(p.id, err, 'warn');
     p.cardUsed = true;
@@ -77,11 +112,36 @@ export class Roles {
     // RPC_BroadcastRoleRevealed(player_id, role_id)
     for (const q of m.list) m.send(q.id, { t: 'roleRevealed', id: p.id, roleId: r.id, name: p.name });
     m.fx('chime', { id: p.id });
+    (m.usedRoles ||= new Set()).add(r.id);
     // Game log, verbose: 1) what the revealed ability does, 2) how and on whom it was just used.
     m.log(`${r.icon} ${r.name} — ${r.desc}`, 'role');
     const on = T.filter(Boolean).map(t => t.name);
     const outcome = said.length ? said.join(' ') : '';
     m.log(`${p.name} revealed ${r.icon} ${r.name}${on.length ? ' and used it on ' + on.join(' and ') : ' and activated it'}${outcome ? ' — ' + outcome : '.'}`, 'ability');
+  }
+
+  /** Simplified Mode effects — all played during the Mutiny Vote. Returns an error string or null. */
+  applySimple(p, r, T) {
+    const m = this.m, cer = m.cer, t = T[0];
+    switch (r.id) {
+      case 101: cer.instig.add(p.id); m.toastAll(`📯 ${p.name}'s vote counts as 2 votes in this voting!`); break;
+      case 102: cer.pacified.add(t.id); m.toastAll(`🕊️ ${t.name}'s vote is canceled in this voting.`); break;
+      case 103: cer.replaceExec(t, p); break;
+      case 104: cer.forceOutcome = 'chef'; cer.t = 0; m.toastAll(`🍲 ${p.name}, the Old Chef, overthrows the Master & Executioner — no count!`); break;
+      case 105: cer.loyal = true; m.toastAll(`🛡️ ${p.name}, the Loyalist, blocks the mutiny — the duo stays in power regardless of votes.`); break;
+      case 106: m.exhaustedQueue = m.exhaustedQueue.filter(id => id !== t.id); m.refreshExhausted(); m.toastAll(`⚱️ ${t.name} is no longer Exhausted.`); break;
+      case 107: t.cardUsed = false; m.toastAll(`🧙 ${p.name} restores ${t.name}'s used card — they may use it again.`); break;
+      case 108: cer.usurper = p.id; m.toastAll(`🗡️ ${p.name} is a Usurper: if this mutiny succeeds, THEY become the new Master.`); break;
+      case 109: if (cer.puppet.has(t.id)) cer.puppet.delete(t.id); else cer.puppet.add(t.id); m.toastAll(`🪆 ${p.name} pulls the strings — ${t.name}'s vote is flipped.`); break;
+      case 110:
+        if (!m.exhaustedQueue.includes(t.id)) m.exhaustedQueue.push(t.id);
+        m.refreshExhausted(); m.toastAll(`⏳ ${p.name}, the Taskmaster, exhausts ${t.name}.`); break;
+      case 111: t.immuneChaos = true; m.toastAll(`🕯️ ${p.name} blesses ${t.name} — Chaos Immunity for the rest of the match.`); break;
+      case 112: cer.jailerOffer(p); m.toastAll(`🗝️ ${p.name}, the Jailer, inspects the captives…`); break;
+      case 114: cer.tiebreak = true; m.toastAll(`⚖️ ${p.name}, the Tiebreaker: a tie in this vote counts as a successful mutiny.`); break;
+      default: return 'Unknown role.';
+    }
+    return null;
   }
 
   apply(p, r, T) {

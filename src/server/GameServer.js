@@ -109,7 +109,9 @@ export class GameServer {
       case 'name': if (m.phase === PHASE.LOBBY) p.name = String(msg.name || p.name).slice(0, 16); break;
       case 'start': m.startGame(p.id); break;
       case 'vote': m.cer.vote(p, msg.amount); break;
-      case 'ability': m.roles.use(p, (msg.targets || []).map(Number)); break;
+      case 'ability': m.roles.use(p, (msg.targets || []).map(Number), msg.copy != null ? +msg.copy : null); break;
+      case 'discard': m.discardRole(p); break;
+      case 'jailer': m.cer.jailerReply(p, !!msg.respawn); break;
       case 'fanatical': m.cer.fanaticalReply(p, !!msg.accept); break;
       case 'calib': m.tasks.answerCalib(p, +msg.uid, msg.amounts); break;
       case 'runes': m.tasks.answerRunes(p, +msg.uid, +msg.choice); break;
@@ -125,6 +127,7 @@ export class GameServer {
     const m = this.match;
     if (target === 'spyhole') { if (m.nearSpyhole(p) && m.phase !== PHASE.LOBBY) m.npcs.spyhole(p); return; }
     if (target.startsWith('npc:')) return m.npcs.inspect(p, +target.slice(4));
+    if (target.startsWith('lever:')) return m.cer.pullLever(p, +target.slice(6));
     if (target.startsWith('player:')) { if (m.phase === PHASE.WORK || m.phase === PHASE.LOBBY) m.climb(p, +target.slice(7)); return; }
     m.tasks.use(p, target);
   }
@@ -222,7 +225,11 @@ export class GameServer {
         speedMul: r2(m.speedMul(v)), noSprint: !!m.dbg.noSprint, noJump: !!v.heldItem && !!m.tasks.itemHeavy(v.heldItem),
       },
       players, gates,
-      bars: m.bars.serialize(), track: m.track, milestones: m.bars.M,
+      bars: m.bars.serialize(), milestones: m.bars.M,
+      // Simplified Mode hides the milestone events (unless the debug toggle re-enables them)
+      track: m.simple && !m.dbg.simpleEvents ? (m.track || []).map(k => (k === 'FINAL' ? k : 'EMPTY')) : m.simple ? (m.track || []).map(k => (k === 'RENEWAL' ? 'EMPTY' : k)) : m.track,
+      simple: m.phase === PHASE.LOBBY ? !!m.dbg.simplified : !!m.simple,
+      roleDropPct: m.dbg.roleDropPct, usedRoles: m.simple ? [...(m.usedRoles || [])] : [],
       tasks: m.phase === PHASE.LOBBY ? [] : m.tasks.serializeTasks(),
       world: m.tasks.serializeWorld(),
       npcs: m.npcs.serialize(v),

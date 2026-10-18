@@ -8,6 +8,7 @@ import { makeBody, stepBody, EYE_H, wallsBetween } from '../shared/physics.js';
 import { PHASE, CER, ROLE_BY_ID, INTERACT_RANGE, NPC_INSPECT_RANGE } from '../shared/constants.js';
 import { LOBBY_MIRROR, SPYHOLE, roomAt, ROOMS, walls as MAP_WALLS } from '../shared/map.js';
 import { TOOLS, ITEM_TYPES, RUNES, TASK_PALETTE } from '../shared/tasks.js';
+import { LINE_SPOTS, LEVER_SPOTS } from '../shared/map.js';
 import { buildWorld, updateTally } from './world.js';
 import { makeMinion, animateMinion, setCrystals, setMinionColor, setGhost, makeTool, makeItem, makeCoins, makeMarker, makeToolMarker, animatePortal, mat, mesh } from './models.js';
 import { FX } from './fx.js';
@@ -103,7 +104,7 @@ export class Game {
       const s = 0.0022 * (+localStorage.getItem('crypt_sens') || 1);
       this.yaw -= e.movementX * s; this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - e.movementY * s));
     });
-    document.addEventListener('mousedown', e => { if (this.locked && e.button === 0) this.lmb(); });
+    document.addEventListener('mousedown', e => { if (e.button !== 0) return; if (this.ui.roleDropOpen) { this.ui.dismissRoleDrop(); return; } if (this.locked) this.lmb(); });
     window.addEventListener('keydown', e => {
       if (this.ui.chatOpen) return;
       if (e.code === 'F1' || e.code === 'Backquote') { e.preventDefault(); if (this.debug) { const o = this.debug.toggle(); if (o) document.exitPointerLock(); } return; }
@@ -113,7 +114,13 @@ export class Game {
       this.keys.add(e.code);
       switch (e.code) {
         case 'KeyE': this.pressE(); break;
-        case 'KeyQ': this.net.send({ t: 'drop' }); break;
+        case 'KeyQ': {
+          const st = this.st, me = this.me;
+          const canDiscard = st?.simple && st.you.roleId && !st.you.cardUsed && !(me?.tool || me?.item || me?.npc);
+          if (canDiscard) this.discardStart = performance.now();
+          else this.net.send({ t: 'drop' });
+          break;
+        }
         case 'KeyF': if (this.target?.kind === 'player') this.net.send({ t: 'shove', target: this.target.pid }); this.slapT = 0.3; break;
         case 'KeyX': this.net.send({ t: 'buck' }); break;
         case 'KeyG': this.useAbility(); break;
@@ -133,6 +140,7 @@ export class Game {
     window.addEventListener('keyup', e => {
       this.keys.delete(e.code);
       if (e.code === 'KeyE') this.releaseE();
+      if (e.code === 'KeyQ' && this.discardStart) { this.discardStart = null; this.ui.holdFeedback('cancel', '✖ Discard cancelled — keep holding Q for 3 s'); }
       if (e.code === 'KeyV' && this.audio.mode === 'ptt') this.audio.ptt = false;
       if (e.code === 'Tab') this.ui.scoreboard(false);
     });
@@ -215,6 +223,16 @@ export class Game {
     const st = this.st; if (!st || !st.you.roleId) return;
     const role = ROLE_BY_ID[st.you.roleId];
     if (!st.you.ability.ok) { this.ui.toast(`${role.name}: ${st.you.ability.reason}`, 'warn'); return; }
+    if (role.id === 113) {                                         // Mirror Mage: choose a used card, then its targets
+      const ids = (st.usedRoles || []).filter(id => id !== 113 && ROLE_BY_ID[id]?.simple);
+      document.exitPointerLock();
+      this.ui.mirrorPick(ids, copy => {
+        const cr = ROLE_BY_ID[copy];
+        if (cr.targets?.length) this.ui.abilityTargets(cr, st, targets => this.net.send({ t: 'ability', targets, copy }));
+        else this.net.send({ t: 'ability', targets: [], copy });
+      });
+      return;
+    }
     if (role.targets && role.targets.length) { document.exitPointerLock(); this.ui.abilityTargets(role, st, targets => this.net.send({ t: 'ability', targets })); }
     else this.net.send({ t: 'ability', targets: [] });
   }
@@ -375,6 +393,7 @@ export class Game {
       e.n = n;
     }
     for (const [id, e] of this.npcs) if (!nids.has(id)) { this.scene.remove(e.mesh); this.npcs.delete(id); }
+    this.syncLevers(st);
     // tools
     const W = st.world;
     this.syncSimple(this.tools, W.tools, t => makeTool(t.type), (m, t) => { m.visible = !t.heldBy; m.position.set(t.x, t.y, t.z); m.rotation.z = Math.PI / 2.4; });
@@ -455,6 +474,41 @@ export class Game {
     if (p.item) { e.itemMesh = makeItem(p.item); e.itemMesh.position.set(0, 0.35, -0.42); e.mesh.add(e.itemMesh); }
   }
 
+  /** Simplified Mode: 3 trapdoors + levers in front of the portal (built once, shown during the ceremony). */
+  syncLevers(st) {
+    const show = !!(st.cer && st.cer.levers);
+    if (!this.leverRig && !show) return;
+    if (!this.leverRig) {
+      const g = new THREE.Group(), rigs = [];
+      LINE_SPOTS.forEach((s, i) => {
+        const frame = mesh(new THREE.BoxGeometry(1.25, 0.06, 1.25), mat('#3a2c22')); frame.position.set(s.x, 0.03, s.z); g.add(frame);
+        const hole = mesh(new THREE.BoxGeometry(1.05, 0.02, 1.05), mat('#050205', { basic: true })); hole.position.set(s.x, 0.05, s.z); g.add(hole);
+        const hinge = new THREE.Group(); hinge.position.set(s.x - 0.52, 0.07, s.z); g.add(hinge);
+        const door = mesh(new THREE.BoxGeometry(1.04, 0.05, 1.04), mat('#6b4a2e')); door.position.x = 0.52; hinge.add(door);
+        for (const dz of [-0.3, 0.3]) { const strap = mesh(new THREE.BoxGeometry(1.0, 0.055, 0.08), mat('#8d9399', { metal: 0.6 })); strap.position.set(0.52, 0.005, dz); hinge.add(strap); }
+        const L = LEVER_SPOTS[i];
+        const base = mesh(new THREE.BoxGeometry(0.32, 0.5, 0.32), mat('#4b4f57', { metal: 0.5 })); base.position.set(L.x, 0.25, L.z); g.add(base);
+        const pivot = new THREE.Group(); pivot.position.set(L.x, 0.5, L.z); g.add(pivot);
+        const arm = mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.8, 6), mat('#9aa3ad', { metal: 0.6 })); arm.position.y = 0.4; pivot.add(arm);
+        const knob = mesh(new THREE.SphereGeometry(0.09, 8, 6), mat('#c0392b', { emissive: '#ff3b2b', ei: 0.7 })); knob.position.y = 0.82; pivot.add(knob);
+        pivot.rotation.x = -0.55;
+        rigs.push({ hinge, pivot, open: 0 });
+      });
+      this.scene.add(g); this.leverRig = { g, rigs };
+    }
+    this.leverRig.g.visible = show;
+    this.leverRig.state = show ? st.cer.levers : [false, false, false];
+  }
+  animateLevers(dt) {
+    const R = this.leverRig; if (!R || !R.g.visible) return;
+    R.rigs.forEach((r, i) => {
+      const on = !!R.state[i];
+      r.open += ((on ? 1 : 0) - r.open) * Math.min(1, dt * 6);
+      r.hinge.rotation.z = -r.open * 1.45;                  // trapdoor swings down
+      r.pivot.rotation.x = -0.55 + r.open * 1.1;             // lever thrown
+    });
+  }
+
   makeCarryObj(key) {
     const g = new THREE.Group();
     if (key === 'censer') {
@@ -494,6 +548,9 @@ export class Game {
     if (working) for (const c of st.world.coins) out.push({ id: 'coin:' + c.id, x: c.x, y: 0.1, z: c.z, label: `Pick up ${c.amount} 💰 (hold E)`, range: 2.6, hold: true, need: this.st.dbg?.timers?.coinPickup ?? 0.6, verb: `Picking up ${c.amount} 💰` });
     for (const [id, e] of this.npcs) { const p = e.mesh.position; out.push({ id: 'npc:' + id, kind: 'npc', npc: e.n, x: p.x, y: p.y + 0.8, z: p.z, label: '', range: 2.8 }); }
     const c = st.cer;
+    if (c && c.sub === CER.ELIMINATE && st.masterId === you.id) {
+      for (const n of st.npcs) if (n.state === 'line' && n.spot != null) { const L = LEVER_SPOTS[n.spot]; out.push({ id: 'lever:' + n.id, x: L.x, y: 1.05, z: L.z, label: 'Pull the lever — drop this captive into the abyss [E]', range: 2.9 }); }
+    }
     const farPick = c && c.sub === CER.NOMINATE && st.masterId === you.id;
     for (const [id, e] of this.players) { const p = e.mesh.position; out.push({ id: 'player:' + id, kind: 'player', pid: id, x: p.x, y: p.y + 0.7, z: p.z, label: '', range: farPick ? 30 : 2.6, p: e.p }); }
     return out;
@@ -537,6 +594,7 @@ export class Game {
       const n = t.npc;
       if (st.phase === PHASE.WORK && st.masterId === you.id && ['chamber', 'ground', 'altar'].includes(n.state)) return `Captive — <span class="k">LMB</span> lift`;
       if (c && c.sub === CER.EXECUTION && st.execId === you.id && n.state === 'altar') return `Captive — <span class="k">LMB</span> lift & carry to the portal`;
+      if (c && c.sub === CER.ELIMINATE && st.masterId === you.id && n.state === 'line') return `Captive — pull the lever next to it (<span class="k">E</span>) to drop it`;
       if (st.spy.active && st.spy.id === you.id && n.state === 'chamber') return `Captive — <span class="k">E</span> peek • <span class="k">LMB</span> drop through trapdoor`;
       return '';
     }
@@ -601,16 +659,18 @@ export class Game {
       if (n.state === 'carried' && n.carrier) {
         const cp = n.carrier === this.myId ? { x: px, y: py, z: pz } : this.interp(n.carrier);
         if (cp) { tx = cp.x; ty = cp.y + 1.25; tz = cp.z; carried = true; }
-      } else if (n.state === 'chamber' || n.state === 'prison' || n.state === 'altar') ty = n.state === 'chamber' ? 0.45 : 0;
-      const kk = carried ? 1 : Math.min(1, dt * 8);
+      } else if (n.state === 'chamber' || n.state === 'prison' || n.state === 'altar' || n.state === 'line') ty = n.state === 'chamber' ? 0.45 : 0;
+      else if (n.state === 'abyss') { e.fall = (e.fall || 0) + dt; ty = -9.8 * e.fall * e.fall; }
+      const kk = carried || n.state === 'abyss' ? 1 : Math.min(1, dt * 8);
       e.mesh.position.x += (tx - e.mesh.position.x) * kk; e.mesh.position.y += (ty - e.mesh.position.y) * kk; e.mesh.position.z += (tz - e.mesh.position.z) * kk;
-      e.mesh.rotation.y = n.state === 'altar' ? Math.atan2(n.x, n.z) : carried ? this.yaw : 0;
+      e.mesh.rotation.y = n.state === 'altar' || n.state === 'line' ? Math.atan2(n.x, n.z) : carried ? this.yaw : 0;
       animateMinion(e.mesh, dt, { speed: 0, carried, sitting: n.state === 'chamber' });
       e.mesh.visible = !(n.carrier === this.myId);
       const glow = st.phase === PHASE.WORK && st.masterId === this.myId && n.state === 'chamber' && !(st.spy.active && st.spy.id !== this.myId);
       e.glow.visible = glow;
       if (glow) e.glow.material.opacity = 0.22 + Math.sin(this.time * 4 + n.id) * 0.12;
     }
+    this.animateLevers(dt);
     // carry objects / wild books
     for (const [uid, o] of this.carryObjs) { const t = this.carryTarget?.get(uid) || o.userData.target; if (t) { o.position.x += (t.x - o.position.x) * Math.min(1, dt * 10); o.position.z += (t.z - o.position.z) * Math.min(1, dt * 10); } }
     for (const [id, m] of this.items) if (m.userData.wild) { const p = this.booksPos.get(id); if (p) { m.position.set(p.x, p.y - 0.15, p.z); m.rotation.y += dt * 6; } }
@@ -636,9 +696,15 @@ export class Game {
     // ---- targeting / prompts
     this.target = playing && !you.blind ? this.pickTarget() : null;
     this.ui.setPrompt(this.promptFor(this.target));
-    if (this.target?.kind === 'npc' && Math.hypot(this.target.x - b.x, this.target.z - b.z) <= NPC_INSPECT_RANGE + 0.3) this.ui.setTooltip(this.ui.npcTooltip(this.target.npc));
+    if (this.target?.kind === 'npc' && Math.hypot(this.target.x - b.x, this.target.z - b.z) <= NPC_INSPECT_RANGE + 0.3) this.ui.setTooltip(this.ui.npcTooltip(this.target.npc, !!this.st.simple));
     else this.ui.setTooltip(null);
-    this.ui.setHold(this.holdView());
+    if (this.discardStart) {
+      const f = (performance.now() - this.discardStart) / 3000;
+      const fill = document.getElementById('rcDFill'); if (fill) fill.style.width = Math.min(100, f * 100) + '%';
+      if (!st.you.roleId || st.you.cardUsed) this.discardStart = null;
+      else if (f >= 1) { this.discardStart = null; this.net.send({ t: 'discard' }); this.ui.holdFeedback('done', '🗑 Role card discarded'); this.audio.sfx('cancel'); }
+      else this.ui.setHold({ frac: f, left: 3 * (1 - f), label: '🗑 Discarding your role card' });
+    } else this.ui.setHold(this.holdView());
     if (this.localHold && this.localHold.need > 0) { this.holdTick = (this.holdTick || 0) + dt; if (this.holdTick > 0.32) { this.holdTick = 0; this.audio.sfx('holdtick'); } }
     document.getElementById('roomName').textContent = (ROOMS[roomAt(b.x, b.z)]?.icon || '') + ' ' + (ROOMS[roomAt(b.x, b.z)]?.name || 'Corridor');
 

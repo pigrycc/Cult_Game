@@ -13,7 +13,7 @@
 //                                      → exhaustion, barriers drop → WORK
 // ============================================================================
 import { PHASE, CER, CURSES, FACTIONS, MILESTONE_EVENTS, FACTION_INFO, ceilHalf, ROLE_BY_ID } from '../shared/constants.js';
-import { ceremonyCircle, MASTER_SPOT, PORTAL } from '../shared/map.js';
+import { ceremonyCircle, MASTER_SPOT, PORTAL, LEVER_SPOTS } from '../shared/map.js';
 import { pick, shuffle, dist2 } from './util.js';
 
 export class Ceremony {
@@ -31,6 +31,9 @@ export class Ceremony {
     this.sealed = new Set(); this.provoked = new Set(); this.doubled = new Set(); this.pacified = new Set();
     this.anarchy = false; this.tribune = false; this.machi = null; this.fanatical = null; this.nominatedBy = null;
     this.reveal = []; this.result = null; this.eminence = false;
+    // Simplified Mode vote modifiers (all played during the single Mutiny Vote window)
+    this.instig = new Set(); this.puppet = new Set(); this.loyal = false; this.tiebreak = false; this.usurper = null;
+    this.forceOutcome = null; this.jailer = null;
   }
 
   get M() { return this.m.P(this.m.masterId); }
@@ -42,8 +45,11 @@ export class Ceremony {
     m.ceremonyIndex = milestoneNum;
     this.milestone = milestoneNum;
     const isFinal = milestoneNum >= m.bars.M;
-    this.eventKey = isFinal ? 'FINAL' : (m.dbg.forcedEvent || m.track[milestoneNum - 1] || 'EMPTY');
+    const raw = isFinal ? 'FINAL' : (m.dbg.forcedEvent || m.track[milestoneNum - 1] || 'EMPTY');
+    // Simplified Mode: milestone events are off unless the debug toggle turns them on (the final tally always happens)
+    this.eventKey = m.simple && raw !== 'FINAL' && (!m.dbg.simpleEvents || raw === 'RENEWAL') ? 'EMPTY' : raw;
     this.chaosSacrificed = false; this.lastSacrifice = null;
+    this.voteDone = false; this.skipVote = false; this.levers = [false, false, false]; this.leversShown = false;
     m.log(`Milestone ${milestoneNum}/${m.bars.M} reached — the ceremony begins (event: ${eventNameOf(this.eventKey)}).`, 'ceremony');
     m.setPhase(PHASE.CEREMONY);
     for (const p of m.list) { p.gagged = false; m.releaseHold(p, 'silent'); }
@@ -86,10 +92,10 @@ export class Ceremony {
     const free = new Set();
     let blindAllBut = null;
     if (s === CER.ANNOUNCE || s === CER.DEBATE || (s === CER.EVENT && mode === 'LIVING')) m.list.forEach(p => free.add(p.id));
-    if ([CER.NOMINATE, CER.VOTE, CER.COUNT, CER.REACTION].includes(s)) free.add(m.masterId);
+    if ([CER.ELIMINATE, CER.NOMINATE, CER.VOTE, CER.COUNT, CER.REACTION].includes(s)) free.add(m.masterId);
     if (s === CER.EXECUTION) { free.add(m.execId); free.add(m.masterId); }
     if (s === CER.CURSE) {
-      if (mode === 'eye') { free.add(m.execId); blindAllBut = m.execId; }
+      if (mode === 'eye') { free.add(this.eyeHolder()); blindAllBut = this.eyeHolder(); }
       if (mode === 'abyss') free.add(m.masterId);
       if (mode === 'initiation') { free.add(m.chaosLeaderId); blindAllBut = m.chaosLeaderId; }
     }
@@ -115,6 +121,7 @@ export class Ceremony {
     const m = this.m;
     switch (this.sub) {
       case CER.ANNOUNCE: this.assemble(); break;
+      case CER.ELIMINATE: { const n = pick(m.npcs.line()); if (n) this.eliminate(n, true); else this.startNomination(); break; }
       case CER.NOMINATE: {
         const forced = m.dbg.forcedDuo?.exec;
         const el = m.eligibleExec();
@@ -122,7 +129,7 @@ export class Ceremony {
         if (t) { m.toastAll(`Time's up — the crypt nominates ${t.name}.`); this.nominate(t.id); }
         break;
       }
-      case CER.VOTE: this.count(); break;
+      case CER.VOTE: if (m.simple) this.resolveSimple(); else this.count(); break;
       case CER.COUNT: this.setSub(CER.REACTION, m.timers.reaction); m.bigAll('REACTION TIME', 'Abilities that alter the rebellion may be revealed now [G]', 2.5, '#ff9de2'); break;
       case CER.REACTION: this.resolveRebellion(); break;
       case CER.EXECUTION: {
@@ -135,7 +142,7 @@ export class Ceremony {
         break;
       }
       case CER.CURSE:
-        if (this.mode === 'eye') { const c = this.slapCandidates(m.execId); if (c.length) this.eyeReveal(pick(c)); else this.startEvent(); }
+        if (this.mode === 'eye') { const c = this.slapCandidates(this.eyeHolder()); if (c.length) this.eyeReveal(pick(c)); else this.startEvent(); }
         else if (this.mode === 'abyss') { const c = this.slapCandidates(m.masterId); if (c.length) this.giveKey(pick(c)); else this.startEvent(); }
         else if (this.mode === 'initiation') { const c = this.initiationCandidates(); if (c.length) this.convert(pick(c)); else this.startEvent(); }
         else this.startEvent();
@@ -160,18 +167,51 @@ export class Ceremony {
   // --------------------------------------------------------------- assembly
   assemble() {
     const m = this.m;
-    m.npcs.prepareCeremony();
+    if (!m.simple) m.npcs.prepareCeremony();          // Simplified Mode spawns its 3 captives at the portal instead
     const others = m.list.filter(p => p.id !== m.masterId);
     const spots = ceremonyCircle(Math.max(others.length, 1));
     others.forEach((p, i) => m.teleport(p, spots[i].x, spots[i].z, spots[i].yaw));
     const mm = this.M;
     if (mm) m.teleport(mm, MASTER_SPOT.x, MASTER_SPOT.z, 0);
+    if (m.simple) return this.startElimination();
     this.startNomination();
   }
 
-  startNomination() {
+  // --------------------------------------------------------------- Simplified Mode: lever elimination (3 → 2)
+  startElimination() {
+    const m = this.m, mm = this.M;
+    const line = m.npcs.spawnLine();
+    if (mm) for (const n of line) mm.knownNpcs.add(n.id);        // ONLY the Master can read the glyphs
+    this.levers = [false, false, false]; this.leversShown = true;
+    this.setSub(CER.ELIMINATE, Math.max(1, +m.dbg.eliminateSec || 20));
+    m.bigAll(`${mm?.name ?? '?'} decides which captive falls`, 'Three captives stand on trapdoors. The Master pulls ONE lever — everyone else is frozen.', 3.5, '#c58bff', mm ? [m.av(mm)] : null);
+    if (mm) m.toast(mm.id, '👁️ Only you can read the glyphs: aim at a captive to read it, then walk to its lever and press E to drop it into the abyss.');
+  }
+
+  /** Master pulls the lever next to a captive → its trapdoor opens. Bots skip the walk. */
+  pullLever(p, npcId, { bot = false } = {}) {
+    const m = this.m;
+    if (this.sub !== CER.ELIMINATE || !p || p.id !== m.masterId) return false;
+    const n = m.npcs.npcs.get(npcId);
+    if (!n || n.state !== 'line') return false;
+    if (!bot && dist2(p.body, LEVER_SPOTS[n.spot]) > 2.8) { m.toast(p.id, 'Walk up to the lever first.'); return false; }
+    this.eliminate(n, false);
+    return true;
+  }
+
+  eliminate(n, auto) {
+    const m = this.m, mm = this.M;
+    this.levers[n.spot] = true;
+    m.npcs.toAbyss(n); m.npcs.lineToAltar();
+    m.log(auto ? 'Time ran out — the crypt dropped a random captive into the abyss.' : `${mm?.name ?? 'The Master'} pulled a lever: a captive fell into the abyss.`, 'ceremony');
+    this.pause({ icon: '🕳️', color: '#c58bff', title: auto ? "Time's up — a trapdoor opens at random" : `${mm?.name ?? 'The Master'} pulled a lever`,
+      lines: ['A captive fell into the abyss — 2 remain in front of the portal.', `${mm?.name ?? 'The Master'} now nominates the Executioner.`] }, () => this.startNomination());
+  }
+
+  startNomination(skipVote = false) {
     const m = this.m;
     this.resetRebellion();
+    this.skipVote = !!skipVote;
     m.execId = null;
     this.setSub(CER.NOMINATE, m.timers.nominate);
     const mm = this.M;
@@ -188,12 +228,17 @@ export class Ceremony {
     this.eminence = byEminence;
     m.fx('nominate', { id });
     m.log(`${this.M?.name} nominated ${t.name} as Executioner${byEminence ? ' (Grey Eminence)' : ''}.`, 'ceremony');
+    if (m.simple && this.skipVote) {                        // ONE mutiny vote per milestone: the new duo goes straight to work
+      m.appoint(t, 'exec', this.M); this.nominatedBy = m.masterId;
+      return this.pause({ icon: '🪓', color: '#ff8a6a', title: `${t.name} is the new Executioner`, lines: ['Only one mutiny vote per milestone — straight to the execution.'] }, () => this.startExecution()) ?? true;
+    }
     this.setSub(CER.VOTE, m.timers.vote);
     const by = byEminence && byEminence !== true ? byEminence : this.M;
     const pair = [m.av(by), m.av(t)];
     for (const p of m.list) {
       if (p.id === t.id) continue;
-      if (this.isVoter(p)) m.big(p.id, `${by?.name ?? '?'} nominated ${t.name} as Executioner`, 'Do you agree? Choose below — crystals are only spent if the mutiny succeeds', 2.5, '#ffd75e', pair);
+      if (this.isVoter(p) && m.simple) m.big(p.id, `${by?.name ?? '?'} nominated ${t.name} as Executioner`, 'APPROVE or MUTINY? Role cards can be played now [G]', 2.5, '#ffd75e', pair);
+      else if (this.isVoter(p)) m.big(p.id, `${by?.name ?? '?'} nominated ${t.name} as Executioner`, 'Do you agree? Choose below — crystals are only spent if the mutiny succeeds', 2.5, '#ffd75e', pair);
       else m.big(p.id, `${by?.name ?? '?'} nominated ${t.name} as Executioner`, 'The crew is deciding whether to rebel...', 2.5, '#ffd75e', pair);
     }
     m.appoint(t, 'exec', by);
@@ -206,6 +251,7 @@ export class Ceremony {
 
   vote(p, amount) {
     if (this.sub !== CER.VOTE || !this.isVoter(p)) return;
+    if (this.m.simple) { this.votes.set(p.id, (amount | 0) > 0 ? 1 : 0); return this.checkTurnout(); }   // 0 = APPROVE, 1 = MUTINY
     amount = Math.max(0, Math.min(3, amount | 0));
     if (this.sealed.has(p.id) && amount > 0) return this.m.toast(p.id, '🤫 You are sealed — you cannot play crystals this time.', 'warn');
     if (this.anarchy) amount = Math.min(1, amount);
@@ -218,7 +264,7 @@ export class Ceremony {
   checkTurnout() {
     if (this.sub !== CER.VOTE) return;
     const voters = this.m.list.filter(q => this.isVoter(q));
-    if (voters.length && voters.every(q => this.votes.has(q.id) || this.sealed.has(q.id))) this.t = Math.min(this.t, 0.5);
+    if (voters.length && voters.every(q => this.votes.has(q.id) || this.sealed.has(q.id))) this.t = Math.min(this.t, this.m.simple ? 4 : 0.5);   // simplified: a few seconds left for role cards
   }
 
   get baseThreshold() {
@@ -307,6 +353,114 @@ export class Ceremony {
       icon: '⚔️', color: '#ff6b6b', title: `Rebellion succeeds (${total}/${th} 💎)`,
       lines: [`${oldMaster?.name ?? '?'} is overthrown — ${newMaster.name} seizes the staff`, ...tieLine, ...lossLines, 'The old duo is spared exhaustion • a new nomination follows'],
     }, () => this.startNomination());
+  }
+
+  // --------------------------------------------------------------- Simplified Mode: APPROVE vs MUTINY
+  /** Weighted tally after the vote modifiers (unvoted = APPROVE; Pacifier → 0, Instigator → 2, Puppet Master flips). */
+  simpleTally() {
+    let mut = 0, app = 0; const rows = [];
+    for (const p of this.m.list) {
+      if (!this.isVoter(p)) continue;
+      let v = this.votes.get(p.id) ?? 0;
+      const flipped = this.puppet.has(p.id); if (flipped) v = 1 - v;
+      const w = this.pacified.has(p.id) ? 0 : this.instig.has(p.id) ? 2 : 1;
+      if (v) mut += w; else app += w;
+      rows.push({ id: p.id, name: p.name, mutiny: !!v, w, flipped, voted: this.votes.has(p.id) });
+    }
+    return { mut, app, rows };
+  }
+
+  resolveSimple() {
+    const m = this.m;
+    if (this.sub !== CER.VOTE) return;
+    this.voteDone = true;
+    if (this.jailer?.pending) this.jailer.pending = false;            // no answer from the Jailer = keep
+    const T = this.simpleTally(), chef = this.forceOutcome === 'chef';
+    let success, why;
+    if (this.loyal) { success = false; why = '🛡️ The Loyalist blocked the mutiny — the duo stays in power'; }
+    else if (chef) { success = true; why = '🍲 The Old Chef overthrew the duo without counting votes'; }
+    else if (T.mut > T.app) { success = true; why = `Strict majority for MUTINY (${T.mut} vs ${T.app})`; }
+    else if (T.mut === T.app && this.tiebreak) { success = true; why = `Tie ${T.mut}–${T.app} — ⚖️ the Tiebreaker turns it into a mutiny`; }
+    else { success = false; why = T.mut === T.app ? `Tie ${T.mut}–${T.app} — a tie defaults to APPROVE` : `APPROVE wins (${T.app} vs ${T.mut})`; }
+    this.result = this.lastVote = { simple: true, mutiny: T.mut, approve: T.app, success, why, rows: T.rows, milestone: this.milestone };
+    const votes = chef ? [] : [`Votes: ${T.rows.map(r => `${r.name} ${r.mutiny ? '⚔️' : '🤝'}${r.w === 2 ? '×2' : ''}${r.w === 0 ? ' (canceled)' : ''}${r.flipped ? ' (flipped)' : ''}`).join(' • ')}`];
+    m.log(`Mutiny vote: ${why}.`, 'ceremony');
+    if (!success) {
+      m.bigAll(this.loyal ? 'The Loyalist holds the line' : 'The crew APPROVES', `${why}. ${this.E?.name ?? '?'} will execute.`, 3, '#c0c0c0');
+      return this.pause({ icon: this.loyal ? '🛡️' : '🤝', color: '#d0d0d0', title: why, lines: [...votes, `${this.M?.name ?? '?'} stays Master • ${this.E?.name ?? '?'} will execute`] }, () => this.startExecution());
+    }
+    this.overthrowSimple(why, votes);
+  }
+
+  /** Overthrow: the Usurper (if played) or a RANDOM eligible minion takes the staff, nominates, and goes straight to the execution. */
+  overthrowSimple(why, lines = []) {
+    const m = this.m, oldM = this.M, oldE = this.E;
+    const us = this.usurper != null ? m.P(this.usurper) : null;
+    let nm = us && !us.ghost && us.id !== oldM?.id ? us : null;
+    if (!nm) {
+      const pool = m.living.filter(p => p.id !== oldM?.id && p.id !== oldE?.id && !p.exhausted && !p.muted);
+      nm = pick(pool.length ? pool : m.living.filter(p => p.id !== oldM?.id));
+    }
+    if (!nm) return this.startExecution();
+    m.masterId = nm.id; nm.servedMaster++; m.execId = null;
+    this.grantAltarVision(nm);
+    if (oldM) m.teleport(oldM, nm.body.x, nm.body.z, nm.body.yaw);
+    m.teleport(nm, MASTER_SPOT.x, MASTER_SPOT.z, 0);
+    m.appoint(nm, 'master'); m.fx('rebellion');
+    m.bigAll('MUTINY SUCCEEDS!', `${oldM?.name ?? '?'} & ${oldE?.name ?? '?'} are overthrown • ${nm.name} takes the staff${us && nm === us ? ' (🗡️ Usurper)' : ' (chosen at random)'}.`, 3.5, '#ff5c5c');
+    m.log(`Mutiny succeeded. ${nm.name} is the new Master${us && nm === us ? ' (Usurper)' : ''}.`, 'ceremony');
+    this.pause({ icon: '⚔️', color: '#ff6b6b', title: `Mutiny succeeds — ${why}`,
+      lines: [...lines, `${oldM?.name ?? '?'} & ${oldE?.name ?? '?'} are overthrown`, `${nm.name} is the new Master${us && nm === us ? ' — the Usurper seized the staff' : ' (random eligible minion)'}`, 'One vote per milestone: the new Master picks an Executioner and the execution follows directly'] },
+    () => this.startNomination(true));
+  }
+
+  /** Grey Eminence (simplified): the current Executioner is cancelled, the caster names a new one; voting continues. */
+  replaceExec(t, by) {
+    const m = this.m, old = this.E;
+    m.execId = t.id;
+    for (const S of [this.pacified, this.puppet, this.instig]) S.delete(t.id);
+    this.votes.delete(t.id);
+    this.nominatedBy = by.id;
+    m.appoint(t, 'exec', by); m.fx('nominate', { id: t.id });
+    this.t = Math.max(this.t, 6);
+    m.toastAll(`🩶 ${by.name} cancels ${old?.name ?? 'the'} Executioner — ${t.name} is the new Executioner. Keep voting!`);
+  }
+
+  /** Jailer: private look at the captives' FACTIONS, then KEEP or RESPAWN 3 unknown ones. */
+  jailerOffer(p) {
+    const m = this.m;
+    this.jailer = { id: p.id, pending: true };
+    m.send(p.id, { t: 'jailerOffer', captives: m.npcs.altar().map(n => ({ id: n.id, faction: n.faction })) });
+  }
+  jailerReply(p, respawn) {
+    const m = this.m, j = this.jailer;
+    if (!j || !j.pending || !p || p.id !== j.id) return;
+    j.pending = false;
+    if (respawn && this.sub === CER.VOTE) {
+      const fresh = m.npcs.spawnLine('altar');
+      this.levers = [false, false, false];
+      const mm = this.M; if (mm) for (const n of fresh) mm.knownNpcs.add(n.id);
+      m.fx('trapdoor');
+      m.toastAll('🗝️ The Jailer sent the captives into the abyss — 3 new captives stand at the portal.');
+    } else m.toast(p.id, '🗝️ You keep the current captives.');
+  }
+
+  /** Simplified Insight Eye is used by the Master (who presided over the sacrifice); classic: the Executioner. */
+  eyeHolder() { return this.m.simple ? (this.presidingMaster ?? this.m.masterId) : this.m.execId; }
+
+  /** Simplified Dark Initiation: the Executioner turns Chaos (unless immune / already Chaos). Secret either way. */
+  initiateExec() {
+    const m = this.m, e = this.E, L = m.P(m.chaosLeaderId);
+    if (!e) return 'Dark Initiation: there was no Executioner to claim.';
+    if (e.faction === FACTIONS.CHAOS) m.toast(e.id, '🔮 The darkness recognises one of its own.');
+    else if (e.immuneChaos) m.toast(e.id, '🛡️ The darkness reaches for you — your Chaos Immunity holds!');
+    else {
+      e.faction = FACTIONS.CHAOS;
+      const chaos = m.list.filter(p => p.faction === FACTIONS.CHAOS);
+      for (const a of chaos) for (const b of chaos) if (a !== b) a.known.set(b.id, FACTIONS.CHAOS);
+      m.send(e.id, { t: 'converted', leader: L?.name ?? '?' });
+    }
+    return `Dark Initiation: the darkness reached for Executioner ${e.name} — nobody knows whether it took hold.`;
   }
 
   /** A new Master inherits full inspection of the captives queued on the altar by the predecessor. */
@@ -409,9 +563,9 @@ export class Ceremony {
         if (e) { e.gagged = true; m.toastAll(`🔇 ${e.name} is gagged until the next ceremony.`); }
         return `Gagging Seal: Executioner ${en} is gagged (no voice or chat) until the next ceremony.`;
       case 'TOXIC_FUMES': return this.toxicFumes();
-      case 'EYE_OF_TRUTH': return `Insight Eye: Executioner ${en} may strike one minion to privately learn their cult.`;
+      case 'EYE_OF_TRUTH': return m.simple ? `Insight Eye: Master ${this.M?.name ?? '?'} may strike one minion to privately learn their cult.` : `Insight Eye: Executioner ${en} may strike one minion to privately learn their cult.`;
       case 'CALL_OF_ABYSS': return `Call of the Abyss: Master ${this.M?.name ?? '?'} hands the Prison key to one minion.`;
-      case 'DARK_INITIATION': return 'Dark Initiation: the Chaos Leader acts in the dark…';
+      case 'DARK_INITIATION': return m.simple ? this.initiateExec() : 'Dark Initiation: the Chaos Leader acts in the dark…';
       default: return `${CURSES[curse]?.name ?? curse}: no effect.`;
     }
   }
@@ -421,13 +575,16 @@ export class Ceremony {
   startInteractiveCurse(curse) {
     const m = this.m, e = this.E, mm = this.M;
     switch (curse) {
-      case 'EYE_OF_TRUTH':
-        if (e) { this.setSub(CER.CURSE, m.timers.eye, 'eye'); m.big(e.id, '👁️ Insight Eye', 'Strike one minion (LMB) to learn their cult!', 3, '#7fe0ff'); return; }
+      case 'EYE_OF_TRUTH': {
+        const h = m.P(this.eyeHolder());
+        if (h) { this.setSub(CER.CURSE, m.timers.eye, 'eye'); m.big(h.id, '👁️ Insight Eye', 'Strike one minion (LMB) to learn their cult!', 3, '#7fe0ff'); return; }
         break;
+      }
       case 'CALL_OF_ABYSS':
         if (mm) { this.setSub(CER.CURSE, m.timers.abyss, 'abyss'); m.bigAll('🗝️ Call of the Abyss', `${mm.name} hands the Prison key to one minion (LMB)`, 3, '#7fe0ff'); return; }
         break;
       case 'DARK_INITIATION': {
+        if (m.simple) break;                                   // already resolved on the Executioner
         const L = m.P(m.chaosLeaderId);
         if (L && !L.ghost && this.initiationCandidates().length) {
           this.setSub(CER.CURSE, m.timers.initiation, 'initiation');
@@ -461,11 +618,11 @@ export class Ceremony {
   initiationCandidates() { return this.m.living.filter(p => p.id !== this.m.chaosLeaderId && p.faction !== FACTIONS.CHAOS && !p.immuneChaos); }
 
   eyeReveal(t) {
-    const e = this.E; if (!e || !t) return this.startEvent();
+    const e = this.m.P(this.eyeHolder()); if (!e || !t) return this.startEvent();
     e.known.set(t.id, t.faction);
     this.m.send(e.id, { t: 'label', id: t.id, text: `${FACTION_INFO[t.faction].icon} ${FACTION_INFO[t.faction].name}`, color: FACTION_INFO[t.faction].color, dur: 3 });
     this.m.fx('slap', { x: t.body.x, z: t.body.z });
-    this.setResolution(`Insight Eye: Executioner ${e.name} privately learned ${t.name}'s cult.`);
+    this.setResolution(`Insight Eye: ${this.m.simple ? 'Master' : 'Executioner'} ${e.name} privately learned ${t.name}'s cult.`);
     this.pause({ icon: '👁️', color: '#7fe0ff', title: 'The Insight Eye closes', lines: [`${e.name} privately learned one minion's cult.`] }, () => this.startEvent());
   }
   giveKey(t) {
@@ -517,6 +674,8 @@ export class Ceremony {
         for (const p of m.list) if (p.id !== m.masterId) m.big(p.id, '🐙 Living Sacrifice Ritual', `RUN! ${mm?.name} hunts a living sacrifice.`, 3, '#ff6b6b');
         break;
       case 'FINAL': return this.finalize();
+      case 'EMPTY': if (m.simple) return this.startDebate();
+      // falls through
       default:
         this.pause({ icon: ev?.icon ?? '⚪', color: '#dddddd', kind: 'event', title: `${ev?.name ?? 'Empty'} milestone`, lines: ['No special event — the debate begins.'] }, () => this.startDebate());
     }
@@ -644,7 +803,7 @@ export class Ceremony {
         break;
       case CER.CURSE:
         if (!t || !near || t.ghost) return;
-        if (this.mode === 'eye' && p.id === m.execId && t.id !== p.id) this.eyeReveal(t);
+        if (this.mode === 'eye' && p.id === this.eyeHolder() && t.id !== p.id) this.eyeReveal(t);
         if (this.mode === 'abyss' && p.id === m.masterId && t.id !== p.id) this.giveKey(t);
         if (this.mode === 'initiation' && p.id === m.chaosLeaderId) {
           if (!this.initiationCandidates().includes(t)) return m.toast(p.id, `${t.name} resists — immune to Chaos or already converted.`, 'warn');
@@ -678,6 +837,9 @@ export class Ceremony {
       sealed: [...this.sealed], provoked: [...this.provoked], anarchy: this.anarchy, tribune: this.tribune,
       lastSacrifice: this.lastSacrifice, chaosSacrificed: this.chaosSacrificed,
       summary: this.sub === CER.RESULT ? this.summary : null, nominatedBy: this.nominatedBy ?? null,
+      simple: !!m.simple, levers: m.simple && this.leversShown ? this.levers : null, eyeHolder: this.sub === CER.CURSE ? this.eyeHolder() : null,
+      decided: m.simple && this.sub === CER.VOTE ? this.votes.size : undefined,
+      voters: m.simple && this.sub === CER.VOTE ? m.list.filter(q => this.isVoter(q)).length : undefined,
     };
   }
 }

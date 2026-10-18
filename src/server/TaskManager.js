@@ -153,6 +153,7 @@ export class TaskManager {
         const nm = TOOLS[inst.def.tool].name; this.dropTool(p); this.m.toast(p.id, `Job done — you put the ${nm} down.`);
       }
     }
+    for (const p of participants) this.m.maybeDropRole(p);          // Simplified Mode: chores may yield a role card
     this.removeTask(inst, 'done');
     this.respawnQ.push(this.m.timers.taskRespawnDelay);
     this.m.bars.addTaskProgress(1);

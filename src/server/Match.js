@@ -13,7 +13,7 @@
 // ============================================================================
 import {
   PHASE, CER, FACTIONS, ROLES, ROLE_BY_ID, ECONOMY, DEFAULT_TIMERS, MIN_PLAYERS, MAX_PLAYERS,
-  ROBE_COLORS, getBalance, MILESTONE_TRACKS, FACTION_INFO,
+  ROBE_COLORS, getBalance, MILESTONE_TRACKS, FACTION_INFO, SIMPLE_ROLE_IDS,
 } from '../shared/constants.js';
 import { makeBody, stepBody, inFront, wallsBetween, EYE_H } from '../shared/physics.js';
 import { roomAt, lobbySpawn, workSpawn, LOBBY_MIRROR, SPYHOLE, PORTAL, INTERCOMS } from '../shared/map.js';
@@ -45,7 +45,7 @@ export class Match {
       debugAll: !!opts.debugAll, freezeRed: false, redX: null, redT: 1.5, yellowMul: 1,
       debateSec: null, debateInfinite: false, maxConcurrent: null, mutinyThreshold: null,
       forcedEvent: null, forcedNpcs: null, forcedDuo: null, botMode: 'roamer',
-      workSec: null, holdMul: 1, extendedCurses: false, botDecisionDelaySeconds: 2.25, botChat: true, destabilizationTriggersChaosWin: false, botSpeed: 1, noSprint: false, shoveDropPct: 30,
+      workSec: null, holdMul: 1, extendedCurses: false, botDecisionDelaySeconds: 2.25, botChat: true, destabilizationTriggersChaosWin: false, simplified: false, roleDropPct: 35, simpleEvents: false, eliminateSec: 20, botSpeed: 1, noSprint: false, shoveDropPct: 30,
       forceFaction: new Map(), forceRole: new Map(),
     };
     this.bars = new ProgressBars(this);
@@ -153,6 +153,8 @@ export class Match {
     if (byId !== this.hostId) return;
     if (!this.canStart()) return this.toast(byId, `Need at least ${MIN_PLAYERS} minions.`);
     this.locked = true;                             // LOBBY_LOCKED
+    this.simple = !!this.dbg.simplified;            // Simplified Mode is fixed for the whole match (toggle is lobby-only)
+    this.usedRoles = new Set();                      // role ids revealed by use this match (Mirror Mage copies these)
     const n = this.players.size;
     this.balance = getBalance(n);
     this.track = MILESTONE_TRACKS[this.balance.milestones];
@@ -164,7 +166,7 @@ export class Match {
     this.setPhase(PHASE.REVEAL, this.timers.revealBack + this.timers.revealFront + 0.8);
     for (const p of this.list) {
       this.send(p.id, {
-        t: 'reveal', faction: p.faction, roleId: p.roleId, threshold: this.cer.baseThreshold, players: n,
+        t: 'reveal', faction: p.faction, roleId: p.roleId, threshold: this.cer.baseThreshold, players: n, simple: this.simple,
         back: this.timers.revealBack, front: this.timers.revealFront,
       });
     }
@@ -189,18 +191,20 @@ export class Match {
       if (other) other.faction = p.faction;
       p.faction = f;
     }
-    // Roles — strictly unique
+    // Roles — strictly unique. Simplified Mode: nobody starts with a card (they drop from finished chores);
+    // a debug-forced role is still handed out so single cards can be tested.
     const pool = shuffle(ROLES.map(r => r.id));
     const taken = new Set();
     for (const [pid, r] of this.dbg.forceRole) { const p = this.P(pid); if (p) { p.roleId = r; taken.add(r); } }
     for (const p of ps) {
       if (this.dbg.forceRole.has(p.id)) continue;
-      p.roleId = pool.find(r => !taken.has(r)); taken.add(p.roleId);
+      p.roleId = this.simple ? null : pool.find(r => !taken.has(r)); taken.add(p.roleId);
     }
     const chaos = ps.filter(p => p.faction === FACTIONS.CHAOS);
     this.chaosLeaderId = chaos[0]?.id ?? null;
     for (const p of ps) p.origFaction = p.faction;   // Blood Pact is based on the dealt identity
     for (const p of ps) this.resetPlayerState(p);             // every match starts from a clean slate
+    if (this.simple) for (const p of ps) p.crystals = 0;       // no Mana Crystals in Simplified Mode
     // Chaos cultists (11p) know their leader & vice versa
     for (const a of chaos) for (const c of chaos) if (a !== c) a.known.set(c.id, FACTIONS.CHAOS);
     // First Master of Ceremonies — random
@@ -226,6 +230,7 @@ export class Match {
     const m = this.P(this.masterId);
     if (m) {
       if (first) this.appoint(m, 'master');
+      else if (this.simple) this.big(m.id, '👑 You are the Master of Ceremonies', 'At the next milestone 3 captives appear at the portal — you pull ONE lever to drop a captive into the abyss.', 6, '#ffd75e');
       else this.big(m.id, '👑 You are the Master of Ceremonies', 'Fetch 2 of the 3 captives from the Selection Chamber (north) — LMB to lift, LMB at the altar to set down.', 6, '#ffd75e');
     }
     for (const p of this.list) if (p.id !== this.masterId) this.big(p.id, 'WORK PHASE', `Keep the crypt standing! ${m?.name ?? '?'} is the Master of Ceremonies`, 3.5, '#ffe28a', m ? [this.av(m)] : null);
@@ -444,6 +449,7 @@ export class Match {
 
   // ------------------------------------------------------------ crystals
   addCrystals(p, n) {
+    if (this.simple) return;                                  // Simplified Mode has no crystal economy
     if (p.infiniteMana && n < 0) return;
     p.crystals = Math.max(0, Math.min(ECONOMY.maxCrystals, p.crystals + n));
   }
@@ -540,10 +546,31 @@ export class Match {
       const s = lobbySpawn(i);
       this.teleport(p, s.x, s.z, 0);                          // facing the mirror
     });
-    this.masterId = this.execId = this.chaosLeaderId = null;
+    this.masterId = this.execId = this.chaosLeaderId = null; this.simple = false; this.usedRoles = new Set();
     this.exhaustedQueue = []; this.tally = { fire: 0, blood: 0, chaos: 0 };
     this.sacrificeLog = []; this.winner = null; this.finaleReason = ''; this.ceremonyIndex = 0;
     this.setPhase(PHASE.LOBBY);
+  }
+
+  // ------------------------------------------------------------ Simplified Mode: role cards from chores
+  /** A finished chore may drop a random card from the Simplified pool (only into an EMPTY slot — a used card stays). */
+  maybeDropRole(p) {
+    if (!this.simple || !p || p.ghost || p.roleId != null || this.phase !== PHASE.WORK) return false;
+    const pct = Math.max(0, Math.min(100, +this.dbg.roleDropPct || 0));
+    if (Math.random() * 100 >= pct) return false;
+    const held = new Set(this.list.map(q => q.roleId).filter(Boolean));
+    const free = SIMPLE_ROLE_IDS.filter(id => !held.has(id));
+    const id = pick(free.length ? free : SIMPLE_ROLE_IDS);
+    Object.assign(p, { roleId: id, cardUsed: false, roleRevealed: false });
+    this.send(p.id, { t: 'roleDrop', roleId: id });
+    return true;
+  }
+  /** Hold [Q] 3 s: silently throw away an UNUSED card so a new one can drop. */
+  discardRole(p) {
+    if (!this.simple || !p || p.roleId == null || p.cardUsed) return false;
+    Object.assign(p, { roleId: null, cardUsed: false, roleRevealed: false });
+    this.toast(p.id, '🗑️ You discarded your role card. Finish chores to find a new one.');
+    return true;
   }
 
   // ------------------------------------------------------------ helpers

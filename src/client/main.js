@@ -4,7 +4,8 @@ import { UI } from './ui.js';
 import { Game } from './game.js';
 import { Audio } from './audio.js';
 import { DebugMenu } from './debug.js';
-import { ROLE_BY_ID } from '../shared/constants.js';
+import { ROLE_BY_ID, PHASE } from '../shared/constants.js';
+import { OnlineHost, listRooms } from './online.js';
 
 const ui = new UI();
 const audio = new Audio();
@@ -12,7 +13,7 @@ let game = null;
 
 async function connect(url, name, token) {
   const net = new Net();
-  ui.menuError('Connecting to ' + url + ' …');
+  ui.menuError(url.startsWith('room:') ? `Connecting to online room ${url.slice(5)} … (WebRTC)` : 'Connecting to ' + url + ' …');
   let welcome;
   try { welcome = await net.connect(url, { t: 'hello', name, token }); }
   catch (e) { ui.menuError(e.message); return; }
@@ -46,6 +47,8 @@ async function connect(url, name, token) {
     coins: m => { audio.sfx('coins'); ui.toast(`+${m.amount} 💰`, 'gold'); },
     reveal: m => { document.exitPointerLock(); ui.showReveal(m, () => ui.big('Click to enter the crypt', 'WASD move • E use/hold • LMB lift/slap • G role card • V talk • Enter chat • Tab board • F1 debug', 5, '#ffe28a')); },
     roleChanged: m => ui.toast(`🛠 Your role is now ${ROLE_BY_ID[m.roleId].name}`),
+    roleDrop: m => { audio.sfx('appoint'); ui.showRoleDrop(m.roleId); },
+    jailerOffer: m => { document.exitPointerLock(); ui.jailer(m, respawn => net.send({ t: 'jailer', respawn })); },
   };
   for (const [k, fn] of Object.entries(H)) net.on(k, fn);
   net.onVoice = buf => audio.playVoice(buf);
@@ -61,15 +64,33 @@ async function connect(url, name, token) {
 }
 
 const params = new URLSearchParams(location.search);
+/** Host side of online play: announce the lobby and bridge internet players into the local server. */
+function startOnline(port, name, listed) {
+  const host = new OnlineHost({ port, name: `${name}'s crypt` });
+  host.listed = listed;
+  host.start();
+  game.online = host;
+  window.__online = host;
+  setInterval(() => {
+    const st = game?.st; if (!st) return;
+    const lobby = st.phase === PHASE.LOBBY && st.lobby;
+    host.update({ players: lobby ? st.lobby.count : st.players.length, max: lobby ? st.lobby.max : 11, simple: !!st.simple, open: !!lobby });
+  }, 2000);
+  window.addEventListener('beforeunload', () => host.stop());
+}
+window.__startOnline = startOnline;                  // used by the automated online smoke test
 ui.showMenu({
   electron: !!window.cryptHost,
-  onHost: async ({ name, port, debugAll }) => {
+  onHost: async ({ name, port, debugAll, listed }) => {
     try {
       const r = await window.cryptHost.start({ port, debugAll });
       if (r.error) return ui.menuError(r.error);
-      connect(`ws://127.0.0.1:${r.port}`, name, r.token);
+      await connect(`ws://127.0.0.1:${r.port}`, name, r.token);
+      if (game) startOnline(r.port, name, listed);
     } catch (e) { ui.menuError(String(e)); }
   },
-  onJoin: ({ name, addr }) => connect(`ws://${addr.replace(/^ws:\/\//, '')}`, name, params.get('token') || undefined),
+  onBrowse: () => listRooms(),
+  onJoin: ({ name, addr }) => connect(addr.startsWith('room:') ? addr : `ws://${addr.replace(/^ws:\/\//, '')}`, name, params.get('token') || undefined),
 });
 if (params.get('join')) connect(`ws://${params.get('join')}`, params.get('name') || 'Tester', params.get('token') || undefined);
+if (params.get('room')) connect(`room:${params.get('room')}`, params.get('name') || 'Tester');
