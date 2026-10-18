@@ -520,12 +520,18 @@ export class Ceremony {
     this.lastSacrifice.resolution = this.applyCurse(n.curse);
     const deltas = this.crystalDeltas(before);
     const F = FACTION_INFO[n.faction];
+    // Mathematical sudden death: once a sacrifice lands, a non-final milestone may already be mathematically decided
+    // (Fire or Blood lead every rival by more than the sacrifices left to come). Simplified Mode has no Living Sacrifice
+    // ritual to carry this check, so run it right here after the portal resolves — but never pre-empt the FINAL tally.
+    // (Classic keeps its existing Living-Sacrifice-only check so its flow is unchanged.)
+    const lock = m.simple && this.milestone < m.bars.M ? this.lockedWinner() : null;
     this.pause({
       icon: F.icon, color: F.color, kind: 'sacrifice', glyph: { faction: n.faction, curse: n.curse },
       title: `${this.E?.name ?? 'The Executioner'} fed a ${F.short} captive to the portal`,
       lines: [`Curse triggered: ${C.name}`, this.lastSacrifice.resolution, ...deltas,
-        `Altar: 🔥 ${m.tally.fire} • 🩸 ${m.tally.blood} • 🔮 ${m.tally.chaos}`],
-    }, () => this.startInteractiveCurse(n.curse));
+        `Altar: 🔥 ${m.tally.fire} • 🩸 ${m.tally.blood} • 🔮 ${m.tally.chaos}`,
+        ...(lock ? [`${FACTION_INFO[lock].icon} ${FACTION_INFO[lock].name} can no longer be caught — sudden death!`] : [])],
+    }, () => { if (lock && this.checkSuddenDeath()) return; this.startInteractiveCurse(n.curse); });
   }
 
   /**
@@ -736,7 +742,7 @@ export class Ceremony {
     if (!f) return false;
     const m = this.m, T = m.tally, remaining = Math.max(0, m.bars.M - this.milestone);
     m.fx('finale', { winner: f });
-    m.endMatch(f, `Mathematical victory after the Living Sacrifice — Fire ${T.fire} • Blood ${T.blood} • Chaos ${T.chaos} with ${remaining} sacrifice${remaining === 1 ? '' : 's'} left: ${FACTION_INFO[f].name} can no longer be caught.`);
+    m.endMatch(f, `Mathematical victory — Fire ${T.fire} • Blood ${T.blood} • Chaos ${T.chaos} with ${remaining} sacrifice${remaining === 1 ? '' : 's'} left: ${FACTION_INFO[f].name} can no longer be caught.`);
     return true;
   }
 
