@@ -174,5 +174,53 @@ for (const n of [5, 7, 9, 11]) {
   cards = m.list.filter(p => p.roleId).length; used = m.usedRoles.size;
   ok(m.phase === PHASE.FINALE && t / 60 <= 20, `${n} Humanlike bots, Simplified Mode: match ends after ${(t / 60).toFixed(1)} min (${votes} votes, ${cards} cards held, ${used} used) — winner ${m.winner}`);
 }
+// ---- 8. a Simplified match reaches the finale, sends a valid finale packet, and it renders without a null-role crash
+{ const sent = [];
+  const m = new Match({ send: (id, msg) => { if (msg && msg.t === 'finale') sent.push(msg); } });
+  const hid = m.addPlayer({ name: 'Host', isHost: true }).id; m.bots.spawn(4);
+  Object.assign(m.dbg, { botMode: 'human', simplified: true, roleDropPct: 20 });
+  m.timers.revealBack = m.timers.revealFront = 0.5; m.startGame(hid); m.phaseT = 0; m.tick(0.016);
+  let t = 0; while (t < 40 * 60 && m.phase !== PHASE.FINALE) { m.tick(0.05); t += 0.05; }
+  ok(m.phase === PHASE.FINALE && sent.length >= 1, 'Simplified match reaches the finale and broadcasts a finale packet');
+  const f = sent[0];
+  ok(f && ['fire', 'blood', 'chaos', 'nobody'].includes(f.winner) && f.tally && Array.isArray(f.reveal), 'finale packet has winner, tally and the player reveal');
+  ok(f.reveal.some(p => p.roleId == null), 'some players have no role card (Simplified) — the summary must survive this');
+  // emulate the exact client render of the role cell + log; must NOT throw on null roleId / missing faction
+  let rendered = true;
+  try {
+    f.reveal.map(p => { const r = ROLE_BY_ID[p.roleId]; return r ? r.icon + r.name : '—'; });
+    (f.log || []).map(l => `${l.milestone}:${l.faction}`);
+  } catch { rendered = false; }
+  ok(rendered, 'the Victory/Summary screen renders for every player (null role cards do not crash it)'); }
+
+// ---- 9. mathematical sudden death in Simplified Mode: an insurmountable lead ends the match before the final milestone
+{ let fin = null;
+  const m = new Match({ send: (id, msg) => { if (msg && msg.t === 'finale' && !fin) fin = msg; } });
+  const hid = m.addPlayer({ name: 'Host', isHost: true }).id; m.bots.spawn(4);
+  Object.assign(m.dbg, { botMode: 'human', simplified: true });
+  m.timers.phaseTransitionBufferSeconds = 0; m.timers.revealBack = m.timers.revealFront = 0.5;
+  m.startGame(hid); m.phaseT = 0; m.tick(0.016);
+  const total = m.bars.M;
+  const draw0 = m.npcs.draw.bind(m.npcs); m.npcs.draw = f => { const n = draw0(f); n.faction = FACTIONS.FIRE; return n; };   // Fire runs away with it
+  let t = 0; while (t < 40 * 60 && m.phase !== PHASE.FINALE) { m.tick(0.05); t += 0.05; }
+  ok(m.phase === PHASE.FINALE && m.winner === FACTIONS.FIRE, 'Fire wins by mathematical sudden death in Simplified Mode');
+  ok(m.cer.milestone < total, `the match ends BEFORE the final milestone (ended at ${m.cer.milestone}/${total}, no redundant rounds)`);
+  ok(/Mathematical victory/.test(m.finaleReason || ''), 'the summary explains the mathematical victory');
+  ok(fin && !/Living Sacrifice/.test(fin.reason), 'the reason is not the classic "Living Sacrifice" wording'); }
+
+// ---- 10. lockedWinner never fires prematurely while an opponent can still catch up (deterministic)
+{ const m = new Match({ send: () => {} });
+  const hid = m.addPlayer({ name: 'Host', isHost: true }).id; for (let i = 0; i < 4; i++) m.addPlayer({ name: 'x' + i });
+  m.list.forEach(p => { p.isBot = false; }); m.dbg.simplified = true;
+  m.startGame(hid); m.phaseT = 0; m.tick(0.016);
+  m.bars.M = 5;
+  const lock = () => m.cer.lockedWinner();
+  m.cer.milestone = 2; m.tally = { fire: 2, blood: 2, chaos: 0 }; ok(lock() === null, 'a dead-even lead (2-2, 3 left) is NOT a sudden death');
+  m.cer.milestone = 3; m.tally = { fire: 3, blood: 1, chaos: 0 }; ok(lock() === null, 'a lead a rival can still TIE (3-1, 2 left → Blood could reach 3) is NOT locked');
+  m.cer.milestone = 3; m.tally = { fire: 4, blood: 1, chaos: 0 }; ok(lock() === FACTIONS.FIRE, 'an insurmountable lead (4-1, 2 left) IS locked');
+  m.cer.milestone = 4; m.tally = { fire: 3, blood: 2, chaos: 0 }; ok(lock() === null, 'a catchable lead (3-2, 1 left → Blood ties) is NOT locked');
+  m.cer.milestone = 4; m.tally = { fire: 3, blood: 1, chaos: 0 }; ok(lock() === FACTIONS.FIRE, 'the lead becomes locked once the rival can no longer even tie (3-1, 1 left)');
+  m.cer.milestone = 4; m.tally = { fire: 2, blood: 2, chaos: 1 }; ok(lock() === null, 'a 3-way-contestable board (2-2-1, 1 left) is not locked (a tie would go to Chaos)'); }
+
 console.log(fails ? `\n${fails} FAILED` : '\nSIMPLIFIED MODE TESTS PASSED');
 process.exit(fails ? 1 : 0);

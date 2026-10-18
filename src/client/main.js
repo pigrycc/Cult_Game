@@ -42,7 +42,7 @@ async function connect(url, name, token) {
     spyhole: m => ui.spyhole(m),
     fanaticalOffer: m => ui.fanatical(m, accept => net.send({ t: 'fanatical', accept })),
     converted: m => ui.big('🔮 You have been initiated', `You now secretly serve the Cult of Chaos. Your leader: ${m.leader}`, 5, '#b06bff'),
-    finale: m => { document.exitPointerLock(); ui.finale(m, game.st?.you.host, () => net.send({ t: 'lobby' })); },
+    finale: m => { document.exitPointerLock(); ui.clearOverlaysForFinale(); ui.finale(m, game.st?.you.host, () => net.send({ t: 'lobby' })); },
     teleport: m => game.onTeleport(m),
     holdEnd: m => game.onHoldEnd(m),
     coins: m => { audio.sfx('coins'); ui.toast(`+${m.amount} 💰`, 'gold'); },

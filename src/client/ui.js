@@ -613,12 +613,19 @@ export class UI {
       <div class="finReason">${esc(msg.reason)}</div>
       <div class="finTally">🔥 ${msg.tally.fire} &nbsp; 🩸 ${msg.tally.blood} &nbsp; 🔮 ${msg.tally.chaos}</div>
       <table class="finTable"><tr><th>Minion</th><th>Cult</th><th>Role</th><th>💰</th></tr>
-      ${msg.reveal.map(p => `<tr><td><span style="color:${p.color}">●</span> ${esc(p.name)}${p.ghost ? ' 👻' : ''}</td><td style="color:${FACTION_INFO[p.faction].color}">${FACTION_INFO[p.faction].icon} ${FACTION_INFO[p.faction].short}${p.leader ? ' (Leader)' : ''}</td><td>${ROLE_BY_ID[p.roleId].icon} ${esc(ROLE_BY_ID[p.roleId].name)}</td><td>${p.gold}</td></tr>`).join('')}</table>
-      <div class="finLog">${msg.log.map(l => `M${l.milestone}: ${FACTION_INFO[l.faction].icon} ${CURSES[l.curse].name} (Exec ${esc(l.exec)})`).join(' • ')}</div>
+      ${msg.reveal.map(p => { const r = ROLE_BY_ID[p.roleId]; const role = r ? `${r.icon} ${esc(r.name)}` : '<span class="small">—</span>'; const f = FACTION_INFO[p.faction] || { color: '#aaa', icon: '•', short: '?' }; return `<tr><td><span style="color:${p.color}">●</span> ${esc(p.name)}${p.ghost ? ' 👻' : ''}</td><td style="color:${f.color}">${f.icon} ${f.short}${p.leader ? ' (Leader)' : ''}</td><td>${role}</td><td>${p.gold}</td></tr>`; }).join('')}</table>
+      <div class="finLog">${msg.log.map(l => `M${l.milestone}: ${(FACTION_INFO[l.faction] || { icon: '•' }).icon} ${(CURSES[l.curse] || { name: l.curse }).name} (Exec ${esc(l.exec)})`).join(' • ')}</div>
       ${isHost ? '<button id="toLobby" class="primary">Return to lobby</button>' : '<div class="small">Waiting for the host…</div>'}</div>`;
     const b = $('#toLobby'); if (b) b.onclick = onLobby;
   }
   hideFinale() { $('#finale').classList.add('hidden'); }
+
+  /** Dismiss any lingering overlay (role-drop, modal minigame, scoreboard) so the finale screen is never covered. */
+  clearOverlaysForFinale() {
+    if (this.roleDropOpen) { this.roleDropOpen = false; clearInterval(this.dropIv); const rd = $('#roleDrop'); if (rd) rd.className = 'hidden'; }
+    if (this.modalOpen && this.closeModal) this.closeModal();
+    const sc = $('#score'); if (sc) sc.classList.add('hidden'); this.scoreOpen = false;
+  }
 
   /** Small microphone status chip (bottom centre-left): open / speaking / muted / silenced by a curse. */
   updateMic(audio, st) {
