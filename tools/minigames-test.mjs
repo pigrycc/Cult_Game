@@ -136,6 +136,15 @@ const put = (p, pt) => Object.assign(p.body, { x: pt.x, z: pt.z, y: 0 });
     ok(sp, `tool "${type}" spawns in the world`);
   } }
 
+// ---- 11b. no tool spawns INSIDE solid geometry (regression: the Drain Bucket used to clip inside the furnace).
+//      A tool resting ON a surface (y at/above the box top) is fine; only a tool embedded in a box's volume is a bug.
+{ const map = await import('../src/shared/map.js'); const { TOOL_SPAWNS } = await import('../src/shared/tasks.js');
+  for (const s of TOOL_SPAWNS) {
+    const y = s.y || 0;
+    const hit = map.boxes.find(b => s.x > b.x - b.w / 2 && s.x < b.x + b.w / 2 && s.z > b.z - b.d / 2 && s.z < b.z + b.d / 2 && y < b.h - 0.05);
+    ok(!hit, `tool "${s.id}" is not embedded in geometry${hit ? ` (inside ${hit.deco || hit.mat} h${hit.h} at ${hit.x},${hit.z}, tool y=${y})` : ''}`);
+  } }
+
 // ---- 12. Bookshelf Ladder is now a (tool-less) stacking co-op; it still completes with a rider
 { const { m, P } = mk(); const t = spawn(m, 'ladder');
   ok(TASKS.ladder.mech === 'stack' && !TASKS.ladder.tool, 'Bookshelf Ladder is a tool-less stacking task');

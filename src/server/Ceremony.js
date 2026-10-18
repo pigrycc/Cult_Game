@@ -23,7 +23,7 @@ export class Ceremony {
     this.sub = null; this.t = 0; this.mode = null; this.milestone = 0; this.eventKey = null;
     this.resetRebellion();
     this.reveal = []; this.result = null; this.presidingMaster = null; this.chaosSacrificed = false; this.lastSacrifice = null;
-    this.summary = null; this.after = null;
+    this.summary = null; this.after = null; this.blindHoldUntil = null;
   }
 
   resetRebellion() {
@@ -103,6 +103,9 @@ export class Ceremony {
       free.add(m.masterId);
       if (mode === 'INSPECTION') blindAllBut = m.masterId;
     }
+    // Dark Initiation blackout buffer: hold everyone-but-the-Leader blind for a moment after the conversion so the
+    // Leader's walk back to their spot is never seen (persists into the result card until blindHoldUntil passes).
+    if (this.blindHoldUntil && m.time < this.blindHoldUntil) blindAllBut = m.chaosLeaderId;
     for (const p of m.list) {
       p.frozen = !free.has(p.id);
       p.blind = blindAllBut != null && p.id !== blindAllBut;
@@ -114,6 +117,8 @@ export class Ceremony {
   tick(dt) {
     if (!(this.sub === CER.DEBATE && this.m.dbg.debateInfinite)) this.t -= dt;
     if (this.sub === CER.REACTION && this.fanatical && this.fanatical.pending && this.t <= 0.05) this.fanaticalReply(this.m.P(this.fanatical.target), false);
+    // lift the Dark Initiation blackout the instant it expires (re-applies freeze/vision for this sub-state)
+    if (this.blindHoldUntil && this.m.time >= this.blindHoldUntil) { this.blindHoldUntil = null; this.applyFreeze(); }
     if (this.t <= 0) this.timeout();
   }
 
@@ -170,9 +175,9 @@ export class Ceremony {
     if (!m.simple) m.npcs.prepareCeremony();          // Simplified Mode spawns its 3 captives at the portal instead
     const others = m.list.filter(p => p.id !== m.masterId);
     const spots = ceremonyCircle(Math.max(others.length, 1));
-    others.forEach((p, i) => m.teleport(p, spots[i].x, spots[i].z, spots[i].yaw));
+    others.forEach((p, i) => { m.teleport(p, spots[i].x, spots[i].z, spots[i].yaw); p.cerSpot = { x: spots[i].x, z: spots[i].z, yaw: spots[i].yaw }; });
     const mm = this.M;
-    if (mm) m.teleport(mm, MASTER_SPOT.x, MASTER_SPOT.z, 0);
+    if (mm) { m.teleport(mm, MASTER_SPOT.x, MASTER_SPOT.z, 0); mm.cerSpot = { x: MASTER_SPOT.x, z: MASTER_SPOT.z, yaw: 0 }; }
     if (m.simple) return this.startElimination();
     this.startNomination();
   }
@@ -632,6 +637,10 @@ export class Ceremony {
     for (const a of chaos) for (const b of chaos) if (a !== b) a.known.set(b.id, FACTIONS.CHAOS);
     m.send(t.id, { t: 'converted', leader: L.name });
     m.send(L.id, { t: 'label', id: t.id, text: '🔮 Converted!', color: '#b06bff', dur: 3 });
+    // Stealth: snap the Chaos Leader back to their circle spot and keep everyone else blind for ~2 s longer, so nobody
+    // sees the Leader walk back and works out who they are.
+    if (L.cerSpot) m.teleport(L, L.cerSpot.x, L.cerSpot.z, L.cerSpot.yaw);
+    this.blindHoldUntil = m.time + 2;                 // extra blackout buffer (consulted by applyFreeze during the result card)
     this.pause({ icon: '🔮', color: '#b06bff', title: 'The darkness recedes…', lines: ['Something has changed in the circle. Nobody saw what.'] }, () => this.startEvent());
   }
 

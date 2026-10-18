@@ -53,7 +53,7 @@ export const TOOL_SPAWNS = [
   { id: 'brush1', type: 'brush', x: -9.0, z: 22.6, y: 0 },
   { id: 'gaff1', type: 'gaff', x: 8.6, z: 29.6, y: 0 },
   { id: 'rag1', type: 'rag', x: 5.2, z: -7.0, y: 0 },
-  { id: 'bucket1', type: 'bucket', x: -26.5, z: -10.5, y: 0 },
+  { id: 'bucket1', type: 'bucket', x: -23.0, z: -9.0, y: 0 },   // on the floor EAST of the furnace (furnace ends at x -24.5) — clear of its collider
   { id: 'dullblade1', type: 'dullblade', x: -22.5, z: 4.0, y: 0 },
   { id: 'cleaver1', type: 'cleaver', x: 6.0, z: 22.5, y: 0 },
 ];
