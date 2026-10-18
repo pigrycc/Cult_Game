@@ -8,7 +8,7 @@ import { clearSavedMatchOverrides } from './overrides.js';
 
 // Configuration commands persisted to localStorage and re-applied automatically on the next start
 const PERSIST = new Set(['red_tick', 'freeze_red', 'yellow_mul', 'timescale', 'force_event', 'npc_config', 'debate_timer', 'max_concurrent',
-  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'chaos_on_explode', 'simplified', 'role_drop', 'simple_events', 'eliminate_timer', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
+  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'chaos_on_explode', 'simplified', 'role_drop', 'simple_events', 'eliminate_timer', 'curse_weights', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
 const STORE = 'crypt_debug_settings_v1';
 export function loadDebugSettings() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { return {}; } }
 function saveDebugSettings(o) { try { localStorage.setItem(STORE, JSON.stringify(o)); } catch { /* storage unavailable */ } }
@@ -101,7 +101,13 @@ export class DebugMenu {
         <div class="npcCfg">${[0, 1, 2].map(i => `<div>NPC ${i + 1}: <select id="dNF${i}">${opt('', 'random')}${Object.values(FACTIONS).map(f => opt(f, f)).join('')}</select><select id="dNC${i}">${opt('', 'random')}${CURSE_KEYS.map(k => opt(k, CURSES[k].name)).join('')}</select></div>`).join('')}
           <button data-c="npcs">Configure Selection Chamber</button> <button data-c="npcclear">Random</button>
           <label><input type="checkbox" id="dExtCur" ${d.extendedCurses ? 'checked' : ''}> Add extended curses to the random pool (Call of the Abyss, Dark Initiation)</label>
-          <div class="small">Every captive always carries a curse — "random" rolls from the curse pool.</div></div>
+          <div class="small">Every captive always carries a curse — "random" rolls from the curse pool.</div>
+          <details class="curseOdds"><summary>🎲 Curse spawn odds (relative weight per glyph)</summary>
+            <div class="small">Tune how likely each curse is. 0 = never. Only curses in the active pool can appear (Simplified Mode uses just its 3; extended curses need the toggle above).</div>
+            ${CURSE_KEYS.map(k => { const w = d.curseWeights ? (d.curseWeights[k] ?? 1) : 1; return `<label class="cw">${CURSES[k].name} <input type="range" id="dCW_${k}" min="0" max="20" step="1" value="${w}"><b id="dCWv_${k}">${w}</b></label>`; }).join('')}
+            <button data-c="curseodds">Apply odds</button> <button data-c="curseuniform">Uniform (default)</button>
+            <div class="small">Tip: set one curse high and the rest to 1 to see it most of the time, or set some to 0 to exclude them.</div>
+          </details></div>
         <label>Debate Timer <input id="dDeb" type="number" value="${d.debateSec ?? ''}" placeholder="table" style="width:60px">s <input type="checkbox" id="dDebInf" ${d.debateInfinite ? 'checked' : ''}> ∞ <button data-c="debate">Set</button> <button data-c="debskip">End Debate</button></label>
         <button data-c="skip">Skip current ceremony step</button>
         <label>Override Altar Tally 🔥<input id="dTF" type="number" value="${st.tally.fire}" style="width:40px">🩸<input id="dTB" type="number" value="${st.tally.blood}" style="width:40px">🔮<input id="dTC" type="number" value="${st.tally.chaos}" style="width:40px"><button data-c="tally">Set</button></label>
@@ -152,6 +158,8 @@ export class DebugMenu {
         case 'ev': this.cmd('force_event', { ev: v('dEv') || null }); break;
         case 'npcs': this.cmd('npc_config', { list: [0, 1, 2].map(i => ({ faction: v('dNF' + i) || undefined, curse: v('dNC' + i) || undefined })) }); break;
         case 'npcclear': this.cmd('npc_clear'); break;
+        case 'curseodds': { const weights = {}; for (const k of CURSE_KEYS) weights[k] = +v('dCW_' + k); this.cmd('curse_weights', { on: true, weights }); break; }
+        case 'curseuniform': this.cmd('curse_weights', { on: false }); setTimeout(() => this.build(), 200); break;
         case 'debate': this.cmd('debate_timer', { sec: +v('dDeb') || null, infinite: document.getElementById('dDebInf').checked }); break;
         case 'debskip': this.cmd('debate_skip'); break;
         case 'skip': this.cmd('skip_step'); break;
@@ -193,6 +201,7 @@ export class DebugMenu {
     document.getElementById('dBotMode').onchange = e => this.cmd('bot_mode', { mode: e.target.value });
     document.getElementById('dBots').oninput = e => { document.getElementById('dBotsV').textContent = e.target.value; };
     document.getElementById('dExtCur').onchange = e => this.cmd('extended_curses', { on: e.target.checked });
+    for (const k of CURSE_KEYS) { const sl = document.getElementById('dCW_' + k); if (sl) sl.oninput = e => { document.getElementById('dCWv_' + k).textContent = e.target.value; }; }
     const all = document.getElementById('dAll'); if (all) all.onchange = e => this.cmd('allow_debug_all', { on: e.target.checked });
     this.el.querySelectorAll('input,select').forEach(i => i.addEventListener('keydown', e => e.stopPropagation()));
   }

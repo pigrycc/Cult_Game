@@ -37,6 +37,7 @@ jobs:
       - run: node tools/voice-test.mjs
       - run: node tools/simple-test.mjs
       - run: node tools/personal-tasks-test.mjs
+      - run: node tools/minigames-test.mjs
       - run: node tools/bot-master-test.mjs
       - run: node tools/bot-ai-test.mjs
       - run: node build.mjs --package
@@ -67,6 +68,7 @@ jobs:
       - run: node tools/voice-test.mjs
       - run: node tools/simple-test.mjs
       - run: node tools/personal-tasks-test.mjs
+      - run: node tools/minigames-test.mjs
       - run: node tools/bot-ai-test.mjs
       - run: node build.mjs --package-mac
       - name: Verify the shipped zip (unzip it fresh, check signature + architectures)

@@ -6,7 +6,7 @@ import { TASKS, TASK_KEYS } from '../src/shared/tasks.js';
 
 let fails = 0;
 const ok = (c, msg) => { if (!c) { fails++; console.log('FAIL', msg); } else console.log('ok  ', msg); };
-const REAL = new Set(['hold', 'fetch', 'runes', 'coop']);
+const REAL = new Set(['hold', 'fetch', 'runes', 'coop', 'collect']);   // mechanics a Humanlike bot performs (mirrors BOT_MECHS)
 
 function world({ bots = 6, mode = 'human', delay = 0, chat = true } = {}) {
   const m = new Match({ send: () => {} });

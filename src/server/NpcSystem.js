@@ -32,10 +32,23 @@ export class NpcSystem {
     const faction = forced?.faction || weighted([[FACTIONS.FIRE, 40], [FACTIONS.BLOOD, 40], [FACTIONS.CHAOS, 20]]);
     // Mandatory curse: there are no "vanilla" captives. Forced (debug) curses must be valid glyphs.
     const pool = this.m.simple ? SIMPLE_CURSES : this.m.dbg.extendedCurses ? [...CORE_CURSES, ...EXTENDED_CURSES] : CORE_CURSES;
-    const curse = forced?.curse && CURSES[forced.curse] ? forced.curse : pick(pool);
+    const curse = forced?.curse && CURSES[forced.curse] ? forced.curse : this.rollCurse(pool);
     const n = { id: NID++, faction, curse, state: 'reserve', x: 0, y: 0, z: 0, carrier: null, discard: null, round: this.m.ceremonyIndex };
     this.npcs.set(n.id, n);
     return n;
+  }
+
+  /**
+   * Pick a curse from the eligible pool. The debug "curse odds" map (dbg.curseWeights, per-glyph relative weights) lets a
+   * host tilt the odds of each curse individually; a weight of 0 excludes that curse. Unset → uniform (every key weight 1).
+   * If every eligible curse is weighted 0 we fall back to a uniform pick so a captive always gets a valid glyph.
+   */
+  rollCurse(pool) {
+    const w = this.m.dbg.curseWeights;
+    if (!w) return pick(pool);
+    const entries = pool.map(k => [k, Math.max(0, +w[k] ?? 1)]);
+    if (entries.every(e => e[1] <= 0)) return pick(pool);
+    return weighted(entries);
   }
 
   seat(n, i) { const s = NPC_SEATS[i]; Object.assign(n, { state: 'chamber', x: s.x, y: 0.5, z: s.z, seat: i }); }

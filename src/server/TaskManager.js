@@ -198,6 +198,7 @@ export class TaskManager {
       case 'bell': inst.data.seq = []; inst.data.rounds = 0; break;
       case 'bellows': inst.data.count = 0; inst.data.lastPad = -1; inst.data.lastT = 0; inst.data.players = new Set(); break;
       case 'hold': if (def.lard) inst.data.lardId = [...this.lard.keys()][0]; break;
+      case 'collect': inst.data.placed = def.steps.map(() => false); inst.data.carrier = null; break;
       default: break;
     }
     this.active.set(inst.uid, inst);
@@ -279,14 +280,22 @@ export class TaskManager {
   }
   deleteItem(it) {
     if (it.heldBy) { const p = this.m.P(it.heldBy); if (p && p.heldItem === it.id) p.heldItem = null; }
+    this.clearCollectCarrier(it);
     this.items.delete(it.id);
   }
   itemHeavy(itemId) { const it = this.items.get(itemId); return it ? ITEM_TYPES[it.type]?.heavy || 0 : 0; }
+  /** When a 'collect' item leaves a player's hand, free that task's carrier slot so a new item can be fetched. */
+  clearCollectCarrier(it) {
+    const inst = it.taskUid != null ? this.active.get(it.taskUid) : null;
+    if (inst && inst.def.mech === 'collect' && inst.data.carrier === it.heldBy) inst.data.carrier = null;
+  }
 
   dropItem(p) {
     const it = this.items.get(p.heldItem);
     p.heldItem = null;
     if (!it) return;
+    // A collect item dropped loose (not placed) just vanishes back to its supply crate; free the carrier slot.
+    if (it.taskUid != null && this.active.get(it.taskUid)?.def.mech === 'collect') { this.clearCollectCarrier(it); this.items.delete(it.id); return; }
     it.heldBy = null;
     const f = { x: -Math.sin(p.body.yaw), z: -Math.cos(p.body.yaw) };
     it.x = p.body.x + f.x * 0.6; it.z = p.body.z + f.z * 0.6; it.y = 0.1;
@@ -359,6 +368,12 @@ export class TaskManager {
         if (d.src) pt('src', d.src, d.tool ? `Scoop ${ITEM_TYPES[d.item].name} (needs ${TOOLS[d.tool].name})` : `Take ${ITEM_TYPES[d.item].name}`, false, { tool: d.tool });
         d.steps.forEach((s, i) => pt('s' + i, s, `${i === d.steps.length - 1 ? 'Deliver' : 'Process'} ${ITEM_TYPES[d.item].name}${s.time ? ' (hold E)' : ''}`, s.time > 0, { step: i, need: this.need(s.time || 0), verb: `${i === d.steps.length - 1 ? 'Delivering' : 'Processing'} ${ITEM_TYPES[d.item].name}` }));
         break;
+      case 'collect': {
+        const placed = inst.data.placed || [];
+        if (!this.m.P(this.carrierOf(inst))) pt('src', d.srcs[0], `Take ${ITEM_TYPES[d.item].name}`, false, { collectSrc: true });
+        d.steps.forEach((s, i) => { if (!placed[i]) pt('d' + i, s, `Place ${ITEM_TYPES[d.item].name} here (E)`, false, { slot: i, goal: true }); });
+        break;
+      }
       case 'coop': d.handles.forEach((h, i) => pt('h' + i, h, `${d.name} — handle ${i + 1}/${d.handles.length} (hold E together)`, true, { need: 0, verb: d.name, coop: true })); break;
       case 'bell': d.handles.forEach((h, i) => pt('r' + i, h, `Bell rope ${i + 1} — pull in order 1-2-3 (3 minions)`, false)); break;
       case 'bellows': d.handles.forEach((h, i) => pt('p' + i, h, `Bellows pad ${i + 1} — jump on it, alternate with partner`, false, { pad: true })); break;
@@ -433,8 +448,14 @@ export class TaskManager {
     switch (d.mech) {
       case 'hold':
         if (d.tool && !needTool(d.tool)) return;
+        if (d.game) {                              // 2D minigame (e.g. scrub): open the overlay instead of a timed hold
+          inst.data.gamePart = part; inst.data.gameAt = this.m.time;
+          this.m.send(p.id, { t: 'minigame', uid: inst.uid, game: d.game, part, name: d.name, tool: d.tool, cfg: this.gameCfg(d) });
+          return;
+        }
         p.hold = { target, uid: inst.uid, need: this.need(d.time), pos: pt, onDone: () => this.repDone(inst, p) };
         break;
+      case 'collect': this.useCollect(p, inst, part, pt); break;
       case 'stack':
         if (!p.ridingOn) return this.m.toast(p.id, 'Too high! Climb on another minion\'s back first (E on a minion).', 'warn');
         if (!needTool(d.tool)) return;
@@ -477,6 +498,54 @@ export class TaskManager {
       }
       default: break;
     }
+  }
+
+  // ---------------------------------------------------------------- minigames + collect
+  carrierOf(inst) { return inst.data.carrier; }
+  /** Per-minigame config the client overlay needs (kept small; the server stays authoritative over task progress). */
+  gameCfg(d) {
+    if (d.game === 'scrub') return { threshold: 0.9, dirty: d.tool === 'mop' ? 'lard' : d.tool === 'rag' ? 'dust' : 'soot' };
+    return {};
+  }
+  /**
+   * A minigame overlay reports success. We validate the player is still at the task, holds the right tool, and that a
+   * minimum play time passed (so a tampered client can't instant-finish), then advance one rep exactly like a hold.
+   */
+  minigameDone(p, uid, part) {
+    const inst = this.active.get(+uid);
+    if (!inst || !inst.def.game) return;
+    const r = this.resolvePoint(`task:${inst.uid}:${part || inst.data.gamePart || 'spot'}`);
+    const pt = r ? r.pt : this.mainPoint(inst);
+    if (!this.inRange(p, pt, 1.0)) return this.m.toast(p.id, 'You moved away from the task.', 'warn');
+    if (inst.def.tool && this.heldToolType(p) !== inst.def.tool) return this.m.toast(p.id, `You need the ${TOOLS[inst.def.tool].name}.`, 'warn');
+    if (this.m.time - (inst.data.gameAt ?? 0) < 0.6) return;        // too fast to be real — ignore
+    this.repDone(inst, p);
+  }
+
+  /** collect: pick an item at the source, carry it (held in hand), place it on the next free slot; repeat for `reps`. */
+  useCollect(p, inst, part, pt) {
+    const d = inst.def;
+    if (part === 'src') {
+      if (p.heldItem || p.load) return this.m.toast(p.id, 'Your hands are full.');
+      if (inst.data.carrier) return this.m.toast(p.id, `Someone is already carrying a ${ITEM_TYPES[d.item].name}.`);
+      const it = this.makeItem(d.item, pt.x, 0.2, pt.z, inst.uid);
+      it.heldBy = p.id; p.heldItem = it.id; inst.data.carrier = p.id;
+      this.m.fx('lift', { x: pt.x, z: pt.z });
+      this.m.toast(p.id, `Carry the ${ITEM_TYPES[d.item].name} to a glowing slot and press E.`);
+      return;
+    }
+    // placing at slot d<i>
+    const slot = +part.slice(1);
+    const it = this.items.get(p.heldItem);
+    if (!it || it.taskUid !== inst.uid) return this.m.toast(p.id, `Take a ${ITEM_TYPES[d.item].name} first.`);
+    if (inst.data.placed[slot]) return this.m.toast(p.id, 'That slot is already filled.');
+    inst.data.placed[slot] = true; inst.data.carrier = null;
+    this.deleteItem(it); p.heldItem = null;
+    inst.participants.add(p.id);
+    this.m.fx('taskstep', { x: pt.x, y: pt.y, z: pt.z });
+    inst.rep = inst.data.placed.filter(Boolean).length;
+    inst.progress = inst.rep / (d.reps || d.steps.length);
+    if (inst.rep >= (d.reps || d.steps.length)) this.complete(inst, [...inst.participants].map(id => this.m.P(id)));
   }
 
   useFetch(p, inst, part, pt, needTool) {

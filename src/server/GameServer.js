@@ -116,6 +116,7 @@ export class GameServer {
       case 'calib': m.tasks.answerCalib(p, +msg.uid, msg.amounts); break;
       case 'runes': m.tasks.answerRunes(p, +msg.uid, +msg.choice); break;
       case 'callhelp': m.tasks.callForHelp(p, +msg.uid); break;
+      case 'minigameDone': m.tasks.minigameDone(p, +msg.uid, msg.part != null ? String(msg.part) : null); break;
       case 'chat': m.chat(p, msg.text); break;
       case 'debug': m.debug.run(p, String(msg.cmd), msg.a || {}); break;
       case 'lobby': m.returnToLobby(p.id); break;

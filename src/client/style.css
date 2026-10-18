@@ -268,3 +268,8 @@ input, select { font-family: inherit; background: #1a1612; color: #f0e2c0; borde
 .roomList { max-height: 180px; overflow-y: auto; margin: 6px 0; } .roomRow { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-bottom: 1px solid #3a2a1a; }
 .roomRow .roomName { font-weight: bold; color: #ffcf66; flex: 1; } .roomRow button { padding: 2px 10px; }
 #micChip:empty { display: none; }
+/* ---- 2D minigames ---- */
+.scrubWrap { position: relative; margin: 8px auto; width: 520px; }
+#scrubC { width: 520px; height: 320px; border: 2px solid #6a5030; border-radius: 8px; background: #1a1410; cursor: crosshair; display: block; }
+.scrubBar { height: 10px; background: #332; border-radius: 5px; margin-top: 8px; overflow: hidden; } #scrubFill { height: 100%; width: 0; background: linear-gradient(90deg,#69f0ae,#18ffff); transition: width .1s; }
+.scrubPct { text-align: center; font-size: 13px; color: #cdbf9d; margin-top: 2px; }

@@ -27,6 +27,7 @@ export const TOOLS = {
   brush:  { name: 'Chimney Brush',      color: '#3a3a3a' },
   gaff:   { name: 'Gaff Hook',          color: '#a0a6ad' },
   bellow: { name: 'Hand Bellows',       color: '#8b5a2b' },
+  rag:    { name: 'Polishing Rag',      color: '#d8c8a0' },
 };
 
 /** One distinct colour per active task (index stored on the task). Markers, required tools and task items all share it. */
@@ -48,6 +49,7 @@ export const TOOL_SPAWNS = [
   { id: 'mop1', type: 'mop', x: -9.0, z: 24.6, y: 0 },
   { id: 'brush1', type: 'brush', x: -9.0, z: 22.6, y: 0 },
   { id: 'gaff1', type: 'gaff', x: 8.6, z: 29.6, y: 0 },
+  { id: 'rag1', type: 'rag', x: 5.2, z: -7.0, y: 0 },
 ];
 
 export const ITEM_TYPES = {
@@ -61,16 +63,24 @@ export const ITEM_TYPES = {
   skull:   { name: 'Skull',           color: '#e8e0c8' },
   sandbag: { name: 'Sandbag',         color: '#b8955a', heavy: 0.5 },
   carcass: { name: 'Frozen Carcass',  color: '#cfe8f5', heavy: 0.55 },
+  candle:  { name: 'Altar Candle',    color: '#f6e9b0', glow: true },
+  specimen:{ name: 'Glowing Specimen', color: '#9effa0', glow: true },
+  scrap:   { name: 'Scrap Metal',     color: '#9aa3ad' },
 };
 
 const P = (x, z, y = 1) => ({ x, z, y });
 
 export const TASKS = {
   // ---- Central Sanctuary ----
-  soot:    { room: 'sanctuary', name: 'Clean Soot from Runes', type: 'solo', mech: 'hold', time: 2, tool: 'broom',
+  // `game` opens a 2D minigame overlay on [E] instead of a plain hold. 'scrub' = wipe/erase ~90% with the mouse.
+  soot:    { room: 'sanctuary', name: 'Clean Soot from Runes', type: 'solo', mech: 'hold', time: 2, tool: 'broom', game: 'scrub',
              spots: [P(-4.2, -5.6, 0.1), P(4.8, -5.2, 0.1), P(-5.2, 4.2, 0.1)], reps: 3 },
   fire:    { room: 'sanctuary', name: 'Replenish Eternal Fire', type: 'solo', mech: 'fetch', item: 'brand',
              src: P(-9.7, -3.4, 1.6), steps: [{ ...P(-3.1, -2.7, 0.9), time: 1 }], reps: 1 },
+  candles: { room: 'sanctuary', name: 'Replace Altar Candles', type: 'solo', mech: 'collect', item: 'candle',
+             srcs: [P(-9.4, -1.2, 0.9), P(-9.4, -1.2, 0.9), P(-9.4, -1.2, 0.9)], steps: [{ ...P(-2.2, -3.2, 0.9) }, { ...P(2.2, -3.2, 0.9) }, { ...P(0, -4.6, 0.9) }], reps: 3 },
+  tablet:  { room: 'sanctuary', name: 'Polish Runic Tablet', type: 'solo', mech: 'hold', time: 2, tool: 'rag', game: 'scrub',
+             spots: [P(-3.4, -2.2, 1.1)], reps: 1 },
   bell:    { room: 'sanctuary', name: 'Three-Tone Bell of Doom', type: 'coop3', mech: 'bell',
              handles: [P(-6.9, -6.0, 1.3), P(-5.6, -7.2, 1.3), P(-4.2, -8.2, 1.3)], rounds: 3 },
   censer:  { room: 'sanctuary', name: 'Carry the Great Censer', type: 'coop2', mech: 'carry',
@@ -101,8 +111,10 @@ export const TASKS = {
              spots: [P(24.5, -15.6, 1.1), P(27, -15.6, 1.1), P(29.5, -15.6, 1.1)], reps: 3 },
   flush:   { room: 'alchemy', name: 'Flush the Research Machine', type: 'solo', mech: 'fetch', item: 'alcohol',
              src: P(30.5, -15.6, 1.1), steps: [{ ...P(32.6, -8, 1.8), time: 1.5 }], reps: 1 },
-  glass:   { room: 'alchemy', name: 'Sweep Broken Glass', type: 'solo', mech: 'hold', time: 1.5, tool: 'broom',
+  glass:   { room: 'alchemy', name: 'Sweep Broken Glass', type: 'solo', mech: 'hold', time: 1.5, tool: 'broom', game: 'scrub',
              spots: [P(24, -5.5, 0.05), P(29, -11, 0.05), P(31, -4, 0.05)], reps: 3 },
+  specimens: { room: 'alchemy', name: 'Sort Glowing Specimens', type: 'solo', mech: 'collect', item: 'specimen',
+             srcs: [P(26, -9, 1.0), P(26, -9, 1.0), P(26, -9, 1.0)], steps: [{ ...P(23.4, -4.4, 1.3) }, { ...P(28.4, -4.0, 1.3) }, { ...P(31.6, -6.2, 1.3) }], reps: 3 },
   calib:   { room: 'alchemy', name: 'Reagent Calibration via Intercom', type: 'coop2', mech: 'calib',
              scale: P(22, -9, 1.1), scroll: P(20.2, 10.6, 1.2) },
   // ---- Library & Scriptorium ----
@@ -121,7 +133,7 @@ export const TASKS = {
              src: P(-2, 21.7, 1.0), steps: [{ ...P(-6, 16.0, 1.4), time: 2 }, { ...P(7.5, 25.2, 0.9), time: 0.8 }], reps: 1 },
   flue:    { room: 'kitchen', name: 'Sweep Soot from Stove Flue', type: 'solo', mech: 'hold', time: 4, tool: 'brush',
              spots: [P(-9.4, 16.8, 2.0)], reps: 1 },
-  mop:     { room: 'kitchen', name: 'Mop Spilled Lard', type: 'solo', mech: 'hold', time: 3, tool: 'mop', lard: true,
+  mop:     { room: 'kitchen', name: 'Mop Spilled Lard', type: 'solo', mech: 'hold', time: 3, tool: 'mop', lard: true, game: 'scrub',
              spots: [], reps: 1 },
   cauldron:{ room: 'kitchen', name: 'Stir the Communal Cauldron', type: 'coop2', mech: 'coop', time: 5,
              handles: [P(-6.0, 20.0, 1.1), P(-3.0, 20.0, 1.1)] },
@@ -134,6 +146,8 @@ export const TASKS = {
              spots: [P(-3, 39.4, 0.7)], reps: 1 },
   skulls:  { room: 'bonemill', name: 'Carry Skulls to the Hopper', type: 'solo', mech: 'fetch', item: 'skull',
              srcs: [P(-6, 36.5, 0.1), P(-1.5, 30, 0.1), P(4, 32, 0.1)], steps: [{ ...P(-3, 34.3, 1.5), time: 0.3 }], reps: 3 },
+  scrap:   { room: 'bonemill', name: 'Sort Scrap Metal from Bones', type: 'solo', mech: 'collect', item: 'scrap',
+             srcs: [P(-4.5, 33, 0.1), P(1, 31.5, 0.1), P(3, 35, 0.1)], steps: [{ ...P(5, 28.5, 1.0) }, { ...P(5, 28.5, 1.0) }, { ...P(5, 28.5, 1.0) }], reps: 3 },
   capstan: { room: 'bonemill', name: 'Drive the Mill Capstan', type: 'coop2', mech: 'coop', time: 5,
              handles: [P(0.6, 34.6, 1.0), P(3.6, 34.6, 1.0)] },
   ash:     { room: 'bonemill', name: 'Transport the Ash Chest', type: 'coop2', mech: 'carry',
@@ -142,7 +156,7 @@ export const TASKS = {
 
 // Mechanics a Humanlike bot can perform for real (see server/Bots.js). The task spawner uses this to make sure a bots-only
 // crew always has something it CAN do on the board — otherwise tasks they refuse (carry, bell, bellows, …) pile up and jam it.
-export const BOT_MECHS = new Set(['hold', 'fetch', 'runes', 'coop']);
+export const BOT_MECHS = new Set(['hold', 'fetch', 'runes', 'coop', 'collect']);
 
 export const TASK_KEYS = Object.keys(TASKS);
 export const COOP_KEYS = TASK_KEYS.filter(k => TASKS[k].type !== 'solo');
