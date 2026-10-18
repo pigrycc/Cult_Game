@@ -6,13 +6,24 @@ RUN: unzip anywhere, double-click CryptOfMinions.exe. No installer, no extra run
 HOST A GAME
   1. Main menu → enter your name → HOST GAME (default port 7777).
      Windows Firewall will ask once — allow "CryptOfMinions" on private networks.
-  2. The lobby shows your address, e.g. 192.168.0.10:7777. Give it to your friends.
+  2. Keep "Online: list my lobby in Browse Rooms" ticked to play over the internet: your lobby gets a 6-letter
+     ROOM CODE and appears in everybody's Browse Rooms list. LAN friends can still use the address shown
+     (e.g. 192.168.0.10:7777).
   3. When 5–11 minions are in the cave, the host presses [START GAME] (the lobby locks).
 
 JOIN A GAME
-  Main menu → "Host address" = host-ip:port → JOIN.
-  Over the internet: the host forwards TCP port 7777 on the router, or everybody uses a
-  virtual LAN (Tailscale / ZeroTier / Radmin VPN / Hamachi) and joins the host's VPN IP.
+  Internet: main menu → "Browse rooms" → JOIN next to an open lobby, or type the host's ROOM CODE → JOIN CODE.
+    No VPN or port forwarding: players connect to the host peer-to-peer (WebRTC), with a relay fallback for
+    strict networks. The list and the connection set-up use free public services (ntfy.sh, PeerJS cloud),
+    so an internet connection is required. Rooms leave the list when the match starts.
+  LAN: "Host address" = host-ip:port → JOIN.
+
+SIMPLIFIED MODE (host: F1 → 0. Game Mode, lobby only)
+  No Mana Crystals and no starting role cards — every finished chore has a chance (debug slider) to give you a
+  random role card. Hold Q for 3 s to discard an unused card. All cards are played during the Mutiny Vote.
+  At each milestone the Master pulls ONE lever to drop 1 of 3 captives into the abyss, nominates an Executioner,
+  and everyone votes APPROVE / MUTINY (strict majority, one vote per milestone). Only 3 curses: Dark Initiation,
+  Toxic Fumes, Insight Eye (the Master inspects). Milestone events are off unless enabled in the debug menu.
 
 HUMANLIKE BOTS
   Debug console → Bot Behaviour → "Humanlike". They fetch tools from the racks before using them, wait a moment
@@ -30,8 +41,8 @@ CONTROLS
   E  use / HOLD for timed tasks (on a minion: climb on its back)
   Q  drop held tool/item          LMB  lift / place / throw captives, slap, nominate
   F  shove                         X    buck the minion riding you (they spill half their gold)
-  G  reveal your role card          1–4 vote crystals in a rebellion
-  V  push-to-talk voice             Enter text chat     Tab scoreboard    M big map
+  G  reveal your role card          1–4 vote crystals (Simplified: 1 APPROVE, 2 MUTINY)
+  V  mute/unmute (open mic)  N push-to-talk mode   Enter text chat   Tab scoreboard   M big map
   F1 developer debug console
 
 DEDICATED / HEADLESS HOST (optional)

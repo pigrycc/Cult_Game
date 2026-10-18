@@ -311,7 +311,22 @@ export class Bots {
     const ready = B.decT <= 0 && !B.done;
     const mode = m.dbg.botMode, human = mode === 'human';
     if (human) this.tryAbility(p, dt);
+    if (cer.jailer?.pending && cer.jailer.id === p.id && ready) {        // Jailer: swap the captives if they look bad for our cult
+      const bad = m.npcs.altar().filter(n => !human ? Math.random() < 0.5 : (p.faction === FACTIONS.CHAOS ? n.faction !== FACTIONS.CHAOS : n.faction !== p.faction)).length;
+      cer.jailerReply(p, bad >= m.npcs.altar().length); B.done = true;
+    }
     switch (cer.sub) {
+      case CER.ELIMINATE:                                         // Simplified Mode: Master drops the WORST captive (for the bot's cult)
+        if (p.id === m.masterId && ready) {
+          const line = m.npcs.line();
+          if (line.length) {
+            for (const n of line) p.knownNpcs.add(n.id);
+            const worst = Math.min(...line.map(n => this.captiveScore(p, n)));
+            const n = human ? pick(line.filter(c => this.captiveScore(p, c) === worst)) : pick(line);
+            cer.pullLever(p, n.id, { bot: true }); B.done = true;
+          }
+        }
+        break;
       case CER.NOMINATE:
         if (p.id === m.masterId && ready) { const el = m.eligibleExec(); if (el.length) { cer.nominate((human ? this.mostTrusted(p, el) : pick(el)).id); B.done = true; } }
         break;
@@ -319,9 +334,10 @@ export class Bots {
         if (ready && cer.isVoter(p)) {
           let v;
           if (mode === 'idle') v = 0;
+          else if (m.simple) v = human ? (this.wantsMutiny(p) ? 1 : 0) : (Math.random() < 0.3 ? 1 : 0);
           else if (human) v = this.wantsMutiny(p) ? Math.min(p.crystals, weighted([[1, 30], [2, 45], [3, 25]])) : 0;
           else v = weighted([[0, 74], [1, 19], [2, 7]]);
-          cer.vote(p, Math.min(v, p.crystals)); B.done = true;
+          cer.vote(p, m.simple ? v : Math.min(v, p.crystals)); B.done = true;
         }
         break;
       case CER.REACTION:
@@ -340,7 +356,7 @@ export class Bots {
         break;
       case CER.CURSE:
         if (!ready) break;
-        if (cer.mode === 'eye' && p.id === m.execId) { const c = cer.slapCandidates(p.id); if (c.length) cer.eyeReveal(pick(c)); B.done = true; }
+        if (cer.mode === 'eye' && p.id === cer.eyeHolder()) { const c = cer.slapCandidates(p.id); if (c.length) cer.eyeReveal(pick(c)); B.done = true; }
         if (cer.mode === 'abyss' && p.id === m.masterId) { const c = cer.slapCandidates(p.id); if (c.length) cer.giveKey(pick(c)); B.done = true; }
         if (cer.mode === 'initiation' && p.id === m.chaosLeaderId) { const c = cer.initiationCandidates(); if (c.length) cer.convert(pick(c)); B.done = true; }
         break;
@@ -375,6 +391,7 @@ export class Bots {
    */
   masterDuty(p, dt, input) {
     const m = this.m, B = p.brain, human = m.dbg.botMode === 'human';
+    if (m.simple) return false;                                // Simplified Mode: no Selection Chamber trip
     const key = `${m.ceremonyIndex}:${m.masterId}`;
     if (B.dutyKey !== key) { B.dutyKey = key; B.captive = null; B.dutyT = 0; B.grabFails = 0; B.gaveUp = false; B.pickAt = null; }
     if (B.gaveUp) return false;
@@ -476,8 +493,31 @@ export class Bots {
     const valid = (f, l) => l.filter(q => R.validTarget(b, f, q));
     const want = m.phase === PHASE.CEREMONY && m.execId ? this.wantsMutiny(b) : null;
     const total = cer.total ? cer.total() : 0, th = cer.threshold;
-    let t = null;
-    switch (b.roleId) {
+    let t = null, copy = null;
+    if (m.simple) {
+      const pickT = (f, pref) => { const v = valid(f, m.list); return v.length ? (pref ? pref(v) : pick(v)).id : null; };
+      const master = m.P(m.masterId), exec = m.P(m.execId);
+      const duoFoe = this.trust(b, master) + this.trust(b, exec) < 0, duoFriend = this.trust(b, master) + this.trust(b, exec) > 0;
+      const decide = id => {
+        switch (id) {
+          case 101: case 108: case 114: return want ? [] : null;
+          case 104: return want && duoFoe ? [] : null;
+          case 105: return want === false && duoFriend ? [] : null;
+          case 102: { const x = pickT('voter', l => enemy(l.filter(q => q !== b).length ? l.filter(q => q !== b) : l)); return x != null && x !== b.id && Math.random() < 0.7 ? [x] : null; }   // cancel a likely opponent
+          case 109: { const x = pickT('voter', enemy); return x != null && Math.random() < 0.6 ? [x] : null; }
+          case 103: { const v = valid('eligible_exec_new', m.list).filter(q => this.trust(b, q) > 0); return v.length && this.trust(b, exec) <= 0 ? [ally(v).id] : null; }
+          case 106: { const v = valid('exhausted', m.list).filter(q => this.trust(b, q) > 0); return v.length ? [v[0].id] : null; }
+          case 107: { const v = valid('used_card', m.list).filter(q => this.trust(b, q) > 0); return v.length ? [v[0].id] : null; }
+          case 110: { const v = valid('not_exhausted', others).filter(q => this.trust(b, q) < 0); return v.length && Math.random() < 0.5 ? [v[0].id] : null; }
+          case 111: return Math.random() < 0.4 ? [b.faction === FACTIONS.CHAOS ? pickT('any') : b.id] : null;
+          case 112: return Math.random() < 0.5 ? [] : null;
+          default: return null;
+        }
+      };
+      if (b.roleId === 113) {                                       // Mirror Mage: copy the first used card whose effect helps now
+        for (const id of R.copyable(b)) { const tt = decide(id); if (tt && !tt.includes(null)) { t = tt; copy = id; break; } }
+      } else { const tt = decide(b.roleId); if (tt && !tt.includes(null)) t = tt; }
+    } else switch (b.roleId) {
       case 1: { const v = valid('other_los', others).filter(q => q.crystals > 0 && this.trust(b, q) <= 0); if (v.length) t = [enemy(v).id]; break; }
       case 3: if (b.crystals >= 2 && Math.random() < 0.3) t = []; break;
       case 5: if (Math.random() < 0.5) t = []; break;
@@ -505,7 +545,7 @@ export class Bots {
         if (m.time < B.abilAt) { B.abilT = Math.max(0.05, B.abilAt - m.time); return; }
         B.abilSig = null;
       }
-      R.use(b, t);
+      R.use(b, t, copy);
     }
   }
 }

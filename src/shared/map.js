@@ -178,6 +178,9 @@ export function ceremonyCircle(n) {
   return pts;
 }
 export const MASTER_SPOT = { x: 0, z: 5.6 };
+// Simplified Mode: 3 captives stand on trapdoors in front of the portal, each with a lever beside it.
+export const LINE_SPOTS = [{ x: -2.4, z: 3.7 }, { x: 0, z: 3.95 }, { x: 2.4, z: 3.7 }];
+export const LEVER_SPOTS = LINE_SPOTS.map(s => ({ x: s.x + 0.95, z: s.z + 0.35 }));
 export function lobbySpawn(i) { return { x: -5 + (i % 6) * 2, z: -74 + Math.floor(i / 6) * 2 }; }
 export function workSpawn(i) { const a = i / 11 * Math.PI * 2; return { x: Math.cos(a) * 6, z: Math.sin(a) * 6 }; }
 

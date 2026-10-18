@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Crypt of Minions</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ws: wss: 'self'; media-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ws: wss: https: 'self'; media-src 'self' blob:">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -40,11 +40,18 @@
           <h3>Host a crypt</h3>
           <label>Port <input id="portIn" value="7777" size="6"></label>
           <label><input type="checkbox" id="dbgAll"> Allow debug console (F1) for all players</label>
+          <label><input type="checkbox" id="onlineList" checked> 🌐 Online: list my lobby in <b>Browse Rooms</b> (internet play)</label>
           <button id="hostBtn" class="primary">HOST GAME</button>
-          <div class="small">Other players join with your IP:port (LAN, VPN like Tailscale/ZeroTier/Hamachi, or a forwarded TCP port).</div>
+          <div class="small">Online friends find you in Browse Rooms (or use your room code). LAN players can still join with your IP:port.</div>
         </div>
         <div class="box">
-          <h3>Join a crypt</h3>
+          <h3>🌐 Browse rooms (online)</h3>
+          <div id="roomList" class="roomList"><div class="small">Press Refresh to look for open lobbies…</div></div>
+          <button id="roomsBtn">↻ Refresh</button>
+          <label>Room code <input id="codeIn" placeholder="ABC123" maxlength="7" size="8"></label> <button id="codeBtn">JOIN CODE</button>
+        </div>
+        <div class="box">
+          <h3>Join over LAN / IP</h3>
           <label>Host address <input id="joinIn" placeholder="192.168.0.10:7777"></label>
           <button id="joinBtn">JOIN</button>
         </div>
@@ -53,6 +60,7 @@
       </div>
     </div>
     <div id="reveal" class="hidden"></div>
+    <div id="roleDrop" class="hidden"></div>
     <div id="finale" class="hidden"></div>
     <div id="micChip" class="idle"></div>
     <div id="score" class="hidden"><div id="scPlayers" class="scWin"></div><div id="scRight" class="scWin"><div id="scDbg" class="hidden"></div><div id="scLog"></div></div></div>

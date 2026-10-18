@@ -88,7 +88,43 @@ export const ROLES = [
     targets: [{ label: 'Player offered to go all-in', filter: 'other' }],
     desc: 'Reaction Time: point at a player — they may immediately throw ALL their remaining crystals into the rebellion. If they refuse, your card flips back face down.' },
 ];
-export const ROLE_BY_ID = Object.fromEntries(ROLES.map(r => [r.id, r]));
+// ---------------------------------------------------------------------------
+// SIMPLIFIED MODE role pool (ids 101+). No starting cards: they drop from finished chores. Every card is used in the
+// same window — the Mutiny Vote — and there is no "when to use" line on the card.
+// Target filters: voter, eligible_exec_new, exhausted, not_exhausted, used_card, any
+// ---------------------------------------------------------------------------
+export const SIMPLE_ROLES = [
+  { id: 101, simple: true, name: 'Rebellion Instigator', icon: '📯', windows: ['VOTE'], targets: [], needsVoter: true,
+    desc: 'Your vote counts as 2 votes in this voting.' },
+  { id: 102, simple: true, name: 'Pacifier', icon: '🕊️', windows: ['VOTE'], targets: [{ label: 'Player whose vote is canceled', filter: 'voter' }],
+    desc: 'Choose a player. Their vote is canceled in this voting.' },
+  { id: 103, simple: true, name: 'Grey Eminence', icon: '🩶', windows: ['VOTE'], targets: [{ label: 'Your new Executioner', filter: 'eligible_exec_new' }],
+    desc: 'Cancel the current Executioner. YOU immediately pick the new Executioner instead.' },
+  { id: 104, simple: true, name: 'Old Chef', icon: '🍲', windows: ['VOTE'], targets: [],
+    desc: 'Immediately overthrow the Master & Executioner without counting votes.' },
+  { id: 105, simple: true, name: 'Loyalist', icon: '🛡️', windows: ['VOTE'], targets: [],
+    desc: 'Block the mutiny. The current Master & Executioner stay in power regardless of votes.' },
+  { id: 106, simple: true, name: 'Embalmer', icon: '⚱️', windows: ['VOTE'], targets: [{ label: 'Player to cleanse of Exhaustion', filter: 'exhausted' }],
+    desc: 'Remove the Exhausted status from any player.' },
+  { id: 107, simple: true, name: 'Dark Mentor', icon: '🧙', windows: ['VOTE'], targets: [{ label: 'Player whose used card is restored', filter: 'used_card' }],
+    desc: 'Choose a player who already used their role. Restore their card so they can use it again.' },
+  { id: 108, simple: true, name: 'Usurper', icon: '🗡️', windows: ['VOTE'], targets: [],
+    desc: 'If this mutiny succeeds, YOU become the new Master.' },
+  { id: 109, simple: true, name: 'Puppet Master', icon: '🪆', windows: ['VOTE'], targets: [{ label: 'Player whose vote is flipped', filter: 'voter' }],
+    desc: 'Choose a player. Flip their vote.' },
+  { id: 110, simple: true, name: 'Taskmaster', icon: '⏳', windows: ['VOTE'], targets: [{ label: 'Player who becomes Exhausted', filter: 'not_exhausted' }],
+    desc: 'Choose a player. They become Exhausted immediately.' },
+  { id: 111, simple: true, name: 'Exorcist', icon: '🕯️', windows: ['VOTE'], targets: [{ label: 'Player who gains Chaos Immunity', filter: 'any' }],
+    desc: 'Choose a player. They gain Chaos Immunity for the rest of the match.' },
+  { id: 112, simple: true, name: 'Jailer', icon: '🗝️', windows: ['VOTE'], targets: [],
+    desc: 'Privately see the faction of current captives. Then choose to either KEEP them or RESPAWN 3 new ones (factions of new ones are unknown to you).' },
+  { id: 113, simple: true, name: 'Mirror Mage', icon: '🪞', windows: ['VOTE'], targets: [],
+    desc: 'Copy and immediately trigger the ability of any role card that was already used.' },
+  { id: 114, simple: true, name: 'Tiebreaker', icon: '⚖️', windows: ['VOTE'], targets: [],
+    desc: 'For this vote only, a tie results in a successful Mutiny.' },
+];
+export const SIMPLE_ROLE_IDS = SIMPLE_ROLES.map(r => r.id);
+export const ROLE_BY_ID = Object.fromEntries([...ROLES, ...SIMPLE_ROLES].map(r => [r.id, r]));
 
 // ---------------------------------------------------------------------------
 // Card copy: WHEN (activation condition, top of the card) + TEXT (short effect,
@@ -124,6 +160,8 @@ const ROLE_COPY = {
 };
 export function roleCard(id, ctx = {}) {
   const r = ROLE_BY_ID[id], c = ROLE_COPY[id];
+  if (r?.simple) return { when: '', text: r.desc };          // Simplified Mode: one shared window, no "when to use"
+
   if (!r || !c) return { when: '', text: r?.desc ?? '' };
   return { when: c.when, text: c.text({ threshold: ctx.threshold ?? 3, players: ctx.players ?? 5 }) };
 }
@@ -150,6 +188,14 @@ export const CURSE_KEYS = Object.keys(CURSES);
 export const CORE_CURSES = ['MANA_BOOST', 'MANA_DRAIN', 'TOXIC_FUMES', 'EYE_OF_TRUTH', 'GAGGING_SEAL'];
 // Extended glyphs from the Convict System doc — added to the random pool only when the debug toggle is on.
 export const EXTENDED_CURSES = ['CALL_OF_ABYSS', 'DARK_INITIATION'];
+// Simplified Mode: only these three glyphs exist, with mode-specific effects.
+export const SIMPLE_CURSES = ['DARK_INITIATION', 'TOXIC_FUMES', 'EYE_OF_TRUTH'];
+export const SIMPLE_CURSE_DESC = {
+  DARK_INITIATION: 'The Executioner is converted to the Cult of Chaos (unless immune to Chaos).',
+  TOXIC_FUMES: 'The Master is overthrown for the next round; the Master & Executioner become drunk.',
+  EYE_OF_TRUTH: 'The Master of Ceremonies privately learns the true faction of one chosen player.',
+};
+export const curseDesc = (key, simple) => (simple && SIMPLE_CURSE_DESC[key]) || CURSES[key]?.desc || '';
 
 // ---------------------------------------------------------------------------
 // Milestone events
@@ -220,7 +266,7 @@ export const PHASE = {
 // Ceremony sub-states
 export const CER = {
   ANNOUNCE: 'ANNOUNCE', NOMINATE: 'NOMINATE', VOTE: 'VOTE', COUNT: 'COUNT', REACTION: 'REACTION',
-  EXECUTION: 'EXECUTION', CURSE: 'CURSE', EVENT: 'EVENT', DEBATE: 'DEBATE', RESULT: 'RESULT',
+  ELIMINATE: 'ELIMINATE', EXECUTION: 'EXECUTION', CURSE: 'CURSE', EVENT: 'EVENT', DEBATE: 'DEBATE', RESULT: 'RESULT',
 };
 
 export const STATUS_ICONS = {

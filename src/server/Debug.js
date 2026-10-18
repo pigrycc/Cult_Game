@@ -24,7 +24,7 @@ export class Debug {
       case 'force_role': {
         const r = +a.role; if (!target || !ROLE_BY_ID[r]) return;
         m.dbg.forceRole.set(target.id, r);
-        if (m.phase !== PHASE.LOBBY) { target.roleId = r; target.cardUsed = false; m.send(target.id, { t: 'roleChanged', roleId: r }); }
+        if (m.phase !== PHASE.LOBBY) { target.roleId = r; target.cardUsed = false; target.roleRevealed = false; m.send(target.id, { t: 'roleChanged', roleId: r }); }
         return ok(`${target.name} → role ${ROLE_BY_ID[r].name}`);
       }
       case 'chaos_leader': if (target) { m.chaosLeaderId = target.id; target.faction = FACTIONS.CHAOS; ok(`${target.name} is now the Chaos Leader`); } return;
@@ -41,6 +41,13 @@ export class Debug {
         return ok(`Bots: ${m.list.filter(q => q.isBot).length}`);
       }
       case 'bot_delay': m.dbg.botDecisionDelaySeconds = Math.max(0, Math.min(10, +a.s)); return ok(`Humanlike reaction delay: ${m.dbg.botDecisionDelaySeconds}s (±33%)`);
+      // ---- 0. Game mode (Simplified Mode can only be switched in the lobby)
+      case 'simplified':
+        if (m.phase !== PHASE.LOBBY) return ok('Simplified Mode can only be changed in the lobby.');
+        m.dbg.simplified = !!a.on; return ok(`Simplified Mode ${a.on ? 'ON' : 'OFF'} (applies to the next match)`);
+      case 'role_drop': m.dbg.roleDropPct = Math.max(0, Math.min(100, +a.pct || 0)); return ok(`Role drop chance per finished task: ${m.dbg.roleDropPct}%`);
+      case 'simple_events': m.dbg.simpleEvents = !!a.on; return ok(`Milestone events in Simplified Mode: ${a.on ? 'ON' : 'OFF'}`);
+      case 'eliminate_timer': m.dbg.eliminateSec = Math.max(1, Math.min(300, +a.s || 20)); return ok(`Master captive elimination timer: ${m.dbg.eliminateSec}s`);
       case 'chaos_on_explode': m.dbg.destabilizationTriggersChaosWin = !!a.on; return ok(`Red Bar destabilisation = ${a.on ? 'CHAOS VICTORY' : 'everyone loses (default)'}`);
       case 'bot_chat': m.dbg.botChat = !!a.on; return ok(`Bot banter ${a.on ? 'ON' : 'OFF'}`);
       case 'bot_speed': m.dbg.botSpeed = Math.max(0.1, Math.min(4, +a.m || 1)); return ok(`Bot movement speed ×${m.dbg.botSpeed}`);
@@ -131,7 +138,7 @@ export class Debug {
     const d = this.m.dbg;
     return {
       freezeRed: d.freezeRed, redX: d.redX, redT: d.redT, yellowMul: d.yellowMul, debateSec: d.debateSec, debateInfinite: d.debateInfinite,
-      maxConcurrent: d.maxConcurrent, mutinyThreshold: d.mutinyThreshold, forcedEvent: d.forcedEvent, botMode: d.botMode, botSpeed: d.botSpeed, botDecisionDelaySeconds: d.botDecisionDelaySeconds, botChat: d.botChat, destabilizationTriggersChaosWin: !!d.destabilizationTriggersChaosWin, noSprint: d.noSprint, shoveDropPct: d.shoveDropPct,
+      maxConcurrent: d.maxConcurrent, mutinyThreshold: d.mutinyThreshold, forcedEvent: d.forcedEvent, botMode: d.botMode, botSpeed: d.botSpeed, botDecisionDelaySeconds: d.botDecisionDelaySeconds, botChat: d.botChat, destabilizationTriggersChaosWin: !!d.destabilizationTriggersChaosWin, simplified: !!d.simplified, roleDropPct: d.roleDropPct, simpleEvents: !!d.simpleEvents, eliminateSec: d.eliminateSec, inLobby: this.m.phase === PHASE.LOBBY, matchSimple: !!this.m.simple, noSprint: d.noSprint, shoveDropPct: d.shoveDropPct,
       timeScale: this.m.timeScale, debugAll: d.debugAll, forcedNpcs: d.forcedNpcs,
       timers: this.m.timers, workSec: d.workSec, holdMul: d.holdMul, extendedCurses: d.extendedCurses, workDefault: this.m.balance.work, debateDefault: this.m.balance.debate,
     };

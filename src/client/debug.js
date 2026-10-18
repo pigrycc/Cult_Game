@@ -2,13 +2,13 @@
 //  DEBUG MENU / DEV CONSOLE (F1) — ImGui-style overlay. Every control sends a
 //  host-validated {t:'debug', cmd, a} packet (see server/Debug.js).
 // ============================================================================
-import { ROLES, FACTIONS, CURSES, MILESTONE_EVENTS, CURSE_KEYS, TIMER_LABELS, DEFAULT_TIMERS } from '../shared/constants.js';
+import { ROLES, SIMPLE_ROLES, FACTIONS, CURSES, MILESTONE_EVENTS, CURSE_KEYS, TIMER_LABELS, DEFAULT_TIMERS } from '../shared/constants.js';
 import { TASKS, TASK_KEYS } from '../shared/tasks.js';
 import { clearSavedMatchOverrides } from './overrides.js';
 
 // Configuration commands persisted to localStorage and re-applied automatically on the next start
 const PERSIST = new Set(['red_tick', 'freeze_red', 'yellow_mul', 'timescale', 'force_event', 'npc_config', 'debate_timer', 'max_concurrent',
-  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'chaos_on_explode', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
+  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'chaos_on_explode', 'simplified', 'role_drop', 'simple_events', 'eliminate_timer', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
 const STORE = 'crypt_debug_settings_v1';
 export function loadDebugSettings() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { return {}; } }
 function saveDebugSettings(o) { try { localStorage.setItem(STORE, JSON.stringify(o)); } catch { /* storage unavailable */ } }
@@ -65,10 +65,16 @@ export class DebugMenu {
     this.playersKey = st.players.map(p => p.id + p.name).join();
     this.el.innerHTML = `
       <div class="dbgHead">🛠 DEV CONSOLE <span>(F1 to close • Esc frees mouse)</span></div>
+      <details open><summary>0. Game Mode</summary>
+        <label title="Can only be changed in the lobby"><input type="checkbox" id="dSimple" ${d.simplified ? 'checked' : ''} ${d.inLobby ? '' : 'disabled'}> <b>Simplified Mode</b> ${d.inLobby ? '<span class="small">(lobby only — applies when the match starts)</span>' : `<span class="small">🔒 locked during the match (${d.matchSimple ? 'Simplified' : 'Classic'})</span>`}</label>
+        <label>Role Drop Chance <input type="range" id="dRoleDrop" min="0" max="100" step="1" value="${d.roleDropPct ?? 35}"><b id="dRoleDropV">${d.roleDropPct ?? 35}%</b> <span class="small">per finished task</span></label>
+        <label><input type="checkbox" id="dSimpleEv" ${d.simpleEvents ? 'checked' : ''}> Enable Milestone Events in Simplified Mode</label>
+        <label>Master Captive Elimination Timer <input id="dElimT" type="number" min="1" max="300" step="1" value="${d.eliminateSec ?? 20}" style="width:60px">s <button data-c="elimt">Set</button></label>
+      </details>
       <details open><summary>1. Identity & Role Overrides</summary>
         <label>Target <select id="dTarget">${this.playerOptions()}</select></label>
         <label>Force Faction <select id="dFac">${Object.values(FACTIONS).map(f => opt(f, f)).join('')}</select><button data-c="faction">Apply</button></label>
-        <label>Force Role <select id="dRole">${ROLES.map(r => opt(r.id, `${r.id}. ${r.icon} ${r.name}`)).join('')}</select><button data-c="role">Apply</button></label>
+        <label>Force Role <select id="dRole"><optgroup label="Classic">${ROLES.map(r => opt(r.id, `${r.id}. ${r.icon} ${r.name}`)).join('')}</optgroup><optgroup label="Simplified Mode">${SIMPLE_ROLES.map(r => opt(r.id, `${r.icon} ${r.name}`)).join('')}</optgroup></select><button data-c="role">Apply</button></label>
         <button data-c="leader">Make Chaos Leader</button> <button data-c="reset_card">Reset Role Cooldown / Re-arm Card</button>
         <label><input type="checkbox" id="dGod" ${st.you.god ? 'checked' : ''}> God Mode: Reveal All Info</label>
         <label><input type="checkbox" id="dInf" ${st.you.infiniteMana ? 'checked' : ''}> Infinite Mana (target)</label>
@@ -163,6 +169,7 @@ export class DebugMenu {
         }
         case 'buffer0': this.cmd('set_timers', { timers: { phaseTransitionBufferSeconds: 0 } }); break;
         case 'botspeed': this.cmd('bot_speed', { m: +v('dBotSpd') }); break;
+        case 'elimt': this.cmd('eliminate_timer', { s: +document.getElementById('dElimT').value }); break;
         case 'clearsaved': saveDebugSettings({}); this.build(); break;
         case 'timersreset': this.cmd('reset_timers'); setTimeout(() => this.build(), 300); break;
         default: break;
@@ -174,6 +181,10 @@ export class DebugMenu {
     document.getElementById('dFreeze').onchange = e => this.cmd('freeze_red', { on: e.target.checked });
     document.getElementById('dBotDelay').oninput = e => { document.getElementById('dBotDelayV').textContent = e.target.value + 's'; };
     document.getElementById('dBotDelay').onchange = e => this.cmd('bot_delay', { s: +e.target.value });
+    document.getElementById('dSimple').onchange = e => { this.cmd('simplified', { on: e.target.checked }); setTimeout(() => this.build(), 400); };
+    document.getElementById('dRoleDrop').oninput = e => { document.getElementById('dRoleDropV').textContent = e.target.value + '%'; };
+    document.getElementById('dRoleDrop').onchange = e => this.cmd('role_drop', { pct: +e.target.value });
+    document.getElementById('dSimpleEv').onchange = e => this.cmd('simple_events', { on: e.target.checked });
     document.getElementById('dChaosExplode').onchange = e => this.cmd('chaos_on_explode', { on: e.target.checked });
     document.getElementById('dBotChat').onchange = e => this.cmd('bot_chat', { on: e.target.checked });
     document.getElementById('dNoSprint').onchange = e => this.cmd('disable_sprint', { on: e.target.checked });
@@ -190,6 +201,8 @@ export class DebugMenu {
     const first = !this.st;
     this.st = st;
     this.replaySaved(st);
-    if (this.open && (first || st.players.map(p => p.id + p.name).join() !== this.playersKey)) this.build();
+    const lobbyNow = st.phase === 'LOBBY' || !!st.lobby;
+    if (this.open && (first || st.players.map(p => p.id + p.name).join() !== this.playersKey || lobbyNow !== this.lobbyWas)) this.build();
+    this.lobbyWas = lobbyNow;
   }
 }

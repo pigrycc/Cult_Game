@@ -3,7 +3,7 @@
 //  crystals/gold), nameplates, NPC glyph tooltips, ceremony panels, modals,
 //  finale & scoreboard.
 // ============================================================================
-import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS, roleCard, FACTION_OBJECTIVE } from '../shared/constants.js';
+import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS, roleCard, FACTION_OBJECTIVE, curseDesc } from '../shared/constants.js';
 import { TOOLS, ITEM_TYPES, RUNES, TASK_PALETTE } from '../shared/tasks.js';
 import { matchAffectingOverrides } from './overrides.js';
 
@@ -47,13 +47,26 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ menu
-  showMenu({ electron, onHost, onJoin, error }) {
+  showMenu({ electron, onHost, onJoin, onBrowse, error }) {
     const m = $('#menu'); m.classList.remove('hidden');
     $('#menuErr').textContent = error || '';
     $('#hostBox').style.display = electron ? '' : 'none';
     $('#nameIn').value = localStorage.getItem('crypt_name') || `Minion${Math.floor(Math.random() * 900 + 100)}`;
     $('#joinIn').value = localStorage.getItem('crypt_join') || '127.0.0.1:7777';
-    $('#hostBtn').onclick = () => { localStorage.setItem('crypt_name', $('#nameIn').value); onHost({ name: $('#nameIn').value, port: +$('#portIn').value || 7777, debugAll: $('#dbgAll').checked }); };
+    $('#hostBtn').onclick = () => { localStorage.setItem('crypt_name', $('#nameIn').value); onHost({ name: $('#nameIn').value, port: +$('#portIn').value || 7777, debugAll: $('#dbgAll').checked, listed: $('#onlineList').checked }); };
+    const joinCode = code => { localStorage.setItem('crypt_name', $('#nameIn').value); onJoin({ name: $('#nameIn').value, addr: 'room:' + code }); };
+    $('#codeBtn').onclick = () => { const c = $('#codeIn').value.toUpperCase().replace(/[^A-Z0-9]/g, ''); if (c.length >= 4) joinCode(c); else this.menuError('Enter the 6-character room code.'); };
+    const refresh = async () => {
+      const box = $('#roomList'); box.innerHTML = '<div class="small">Searching…</div>';
+      try {
+        const rooms = await onBrowse();
+        box.innerHTML = rooms.length ? rooms.map(r => `<div class="roomRow"><span class="roomName">${esc(r.name || "Crypt")}</span> <span class="small">${r.players}/${r.max} • ${r.simple ? 'Simplified' : 'Classic'} • <b class="roomCode">${esc(r.code)}</b></span> <button data-code="${esc(r.code)}">JOIN</button></div>`).join('')
+          : '<div class="small">No open lobbies right now. Host one, or ask a friend for their room code.</div>';
+        box.querySelectorAll('button[data-code]').forEach(b => b.onclick = () => joinCode(b.dataset.code));
+      } catch (e) { box.innerHTML = `<div class="small">⚠ ${esc(e.message)}</div>`; }
+    };
+    $('#roomsBtn').onclick = refresh;
+    if (onBrowse) { refresh(); clearInterval(this.roomIv); this.roomIv = setInterval(() => { if (!$('#menu').classList.contains('hidden')) refresh(); else clearInterval(this.roomIv); }, 8000); }
     $('#joinBtn').onclick = () => { localStorage.setItem('crypt_name', $('#nameIn').value); localStorage.setItem('crypt_join', $('#joinIn').value); onJoin({ name: $('#nameIn').value, addr: $('#joinIn').value }); };
   }
   hideMenu() { $('#menu').classList.add('hidden'); $('#hud').classList.remove('hidden'); }
@@ -61,6 +74,7 @@ export class UI {
 
   // ------------------------------------------------------------------ reveal (2D cards)
   showReveal(msg, onDone) {
+    if (msg.simple && !msg.roleId) return this.showFactionReveal(msg, onDone);
     const f = FACTION_INFO[msg.faction], r = ROLE_BY_ID[msg.roleId];
     const el = $('#reveal'); el.classList.remove('hidden'); el.style.opacity = 1;
     el.innerHTML = `
@@ -92,6 +106,59 @@ export class UI {
         else { clearInterval(iv); window.removeEventListener('keydown', key); el.style.opacity = 0; setTimeout(() => { el.classList.add('hidden'); onDone && onDone(); }, 700); }
       }
     }, 100);
+  }
+
+  /** Simplified Mode: only the faction identity is revealed at the start (no starting role card). */
+  showFactionReveal(msg, onDone) {
+    const f = FACTION_INFO[msg.faction];
+    const el = $('#reveal'); el.classList.remove('hidden'); el.style.opacity = 1;
+    el.innerHTML = `
+      <div class="objBanner" style="--fc:${f.color}"><b>FACTION OBJECTIVE ${f.icon}</b><span>${esc(FACTION_OBJECTIVE[msg.faction])}</span></div>
+      <div class="cardWrap"><div class="card"><div class="face back" style="--glow:${f.color}"><div class="crest">${f.icon}</div><div class="runes">ᚠ ᚢ ᚦ ᚨ ᚱ</div></div></div><div class="cardGlow" style="background:${f.color}"></div></div>
+      <div class="revealTitle" style="color:${f.color}">${f.name.toUpperCase()}</div>
+      <div class="revealSub">SIMPLIFIED MODE — no role card yet. Every finished chore has a chance to give you one.</div>
+      <div class="revealTimer" id="rTimer"></div>`;
+    let t = (msg.back || 3) + (msg.front || 3);
+    const iv = setInterval(() => {
+      t -= 0.1; $('#rTimer').textContent = `(00:${String(Math.max(0, Math.ceil(t))).padStart(2, '0')})`;
+      if (t <= 0) { clearInterval(iv); el.style.opacity = 0; setTimeout(() => { el.classList.add('hidden'); onDone && onDone(); }, 700); }
+    }, 100);
+  }
+
+  /**
+   * Simplified Mode: a role card dropped from a chore. Full-screen for 15 s (LMB / click dismisses early), then the card
+   * flies down into the bottom-right HUD slot.
+   */
+  showRoleDrop(roleId) {
+    const r = ROLE_BY_ID[roleId]; if (!r) return;
+    const el = $('#roleDrop'); clearInterval(this.dropIv); clearTimeout(this.dropFly);
+    el.className = ''; el.innerHTML = `<div class="rdBack"></div><div class="rdInner">
+      <div class="rdHead">✨ ROLE CARD FOUND ✨</div>
+      <div class="rdCard"><div class="rIcon">${r.icon}</div><div class="rName">${esc(r.name)}</div><div class="rDesc">${esc(r.desc)}</div></div>
+      <div class="rdHint">Use it during the <b>Mutiny Vote</b> with <b>[G]</b> • hold <b>[Q]</b> 3 s to discard it<br><span id="rdT">15</span> s — click to continue</div></div>`;
+    this.roleDropOpen = true;
+    let t = 15;
+    this.dropIv = setInterval(() => { t -= 0.25; const e = $('#rdT'); if (e) e.textContent = Math.max(0, Math.ceil(t)); if (t <= 0) this.dismissRoleDrop(); }, 250);
+    el.onclick = () => this.dismissRoleDrop();
+  }
+  dismissRoleDrop() {
+    if (!this.roleDropOpen) return;
+    this.roleDropOpen = false; clearInterval(this.dropIv);
+    const el = $('#roleDrop'); el.classList.add('fly');                     // CSS: shrink + slide into the bottom-right slot
+    this.dropFly = setTimeout(() => { el.className = 'hidden'; el.innerHTML = ''; }, 750);
+  }
+
+  jailer(msg, onReply) {
+    const m = this.modal(`<h3>🗝️ Jailer — the captives at the portal</h3><p>Only you see this. Keep these captives, or send them into the abyss and RESPAWN 3 new ones (you will not know their factions).</p>
+      <div class="jailList">${msg.captives.map(c => `<div class="jailRow" style="color:${FACTION_INFO[c.faction].glyph}">${FACTION_INFO[c.faction].icon} <b>${FACTION_INFO[c.faction].name}</b></div>`).join('')}</div>
+      <button id="jkeep" class="primary">KEEP them</button> <button id="jresp">RESPAWN 3 new</button>`, { onClose: () => onReply(false) });
+    $('#jkeep', m).onclick = () => { onReply(false); this.modalOpen = false; m.classList.add('hidden'); };
+    $('#jresp', m).onclick = () => { onReply(true); this.modalOpen = false; m.classList.add('hidden'); };
+  }
+  mirrorPick(ids, onPick) {
+    const m = this.modal(`<h3>🪞 Mirror Mage</h3><p>Copy and immediately trigger a role card that was already used:</p>
+      <div class="plist">${ids.map(id => { const r = ROLE_BY_ID[id]; return `<button class="pbtn mm" data-id="${id}">${r.icon} <b>${esc(r.name)}</b><br><small>${esc(r.desc)}</small></button>`; }).join('')}</div>`);
+    m.querySelectorAll('.mm').forEach(b => b.onclick = () => { this.closeModal(); onPick(+b.dataset.id); });
   }
 
   // ------------------------------------------------------------------ toasts / big text / labels
@@ -178,6 +245,8 @@ export class UI {
       li.style.display = '';
       const L = st.lobby;
       const liHtml = `<div class="pc">PLAYERS: ${L.count} / ${L.max} (MIN. ${L.min})</div>
+        <div class="modeLine ${st.simple ? 'simple' : ''}">MODE: <b>${st.simple ? 'SIMPLIFIED' : 'CLASSIC'}</b>${st.simple ? ' — no crystals, roles drop from chores, APPROVE/MUTINY vote' : ''}</div>
+        ${game.online?.code ? `<div class="small">🌐 Online room <b class="roomCode">${esc(game.online.code)}</b> ${game.online.listed ? '— listed in Browse Rooms' : '(unlisted — share the code)'} ${game.online.status ? '• ' + esc(game.online.status) : ''}</div>` : ''}
         <div class="small">Host address: ${L.ips.length ? L.ips.map(ip => `<b>${ip}:${L.port}</b>`).join(' / ') : 'localhost:' + L.port}</div>
         <div class="small">Walk to the 🪞 mirror and press <b>E</b> to dye your robe.</div>
         ${you.host ? `<button id="startBtn" ${L.canStart ? '' : 'disabled'}>${L.canStart ? '[START GAME]' : `Waiting for ${L.min - L.count} more…`}</button><div class="small">F1 → Debug: spawn bots to test solo</div>` : '<div class="small">Waiting for the host to start the ritual…</div>'}
@@ -186,6 +255,15 @@ export class UI {
     } else li.style.display = 'none';
     // --- bottom bar
     const bb = $('#bottomBar'); bb.style.display = inMatch && st.phase !== PHASE.REVEAL ? '' : 'none';
+    if (inMatch && st.simple && !you.roleId && you.faction) {
+      // Simplified Mode, empty card slot
+      const f = FACTION_INFO[you.faction];
+      const bbHtml = `<div class="res"><div class="gold">💰 ${you.gold}</div><div class="fac" style="color:${f.color}">${f.icon} ${f.name}</div></div>
+        <div class="held">${me?.tool ? '✋ ' + esc(TOOLS[me.tool]?.name) + ' <span class="k">[Q]</span>' : me?.item ? '✋ ' + esc(ITEM_TYPES[me.item]?.name) + ' <span class="k">[Q]</span>' : ''}</div><div class="statuses"></div>
+        <div id="roleCard" class="roleCard empty"><div class="rcObj" style="--fc:${f.color}"><b>FACTION OBJECTIVE ${f.icon}</b><span>${esc(FACTION_OBJECTIVE[you.faction])}</span></div>
+          <div class="rcIcon">🂠</div><div class="rcName">No role card</div><div class="rcText">Finish chores: each one has a ${Math.round(st.roleDropPct ?? 0)}% chance to give you a random role card.</div></div>`;
+      if (bb.dataset.h !== bbHtml) { bb.dataset.h = bbHtml; bb.innerHTML = bbHtml; }
+    }
     if (inMatch && you.roleId) {
       const r = ROLE_BY_ID[you.roleId], f = FACTION_INFO[you.faction];
       const usable = you.ability.ok;
@@ -202,16 +280,17 @@ export class UI {
       if (you.leader) statuses.push('🔮 Chaos Leader');
       const held = me?.tool ? TOOLS[me.tool]?.name : me?.item ? ITEM_TYPES[me.item]?.name : me?.npc ? 'Bound captive' : '';
       const bbHtml = `
-        <div class="res"><div class="crys">💎 ${you.crystals}${you.infiniteMana ? '∞' : ''}</div><div class="gold">💰 ${you.gold}</div>
+        <div class="res">${st.simple ? '' : `<div class="crys">💎 ${you.crystals}${you.infiniteMana ? '∞' : ''}</div>`}<div class="gold">💰 ${you.gold}</div>
           <div class="fac" style="color:${f.color}">${f.icon} ${f.name}</div></div>
         <div class="held">${held ? '✋ ' + esc(held) + (me?.load ? ' + ' + esc(ITEM_TYPES[me.load]?.name) : '') + ' <span class="k">[Q]</span>' : ''}</div>
         <div class="statuses">${statuses.map(s => `<span>${s}</span>`).join('')}</div>
         <div id="roleCard" class="roleCard ${you.cardUsed ? 'used' : ''} ${usable ? 'usable' : ''}">
           <div class="rcObj" style="--fc:${f.color}"><b>FACTION OBJECTIVE ${f.icon}</b><span>${esc(FACTION_OBJECTIVE[you.faction])}</span></div>
-          <div class="rcWhen"><b>WHEN TO USE:</b> ${esc(card.when)}</div>
+          ${r.simple ? '' : `<div class="rcWhen"><b>WHEN TO USE:</b> ${esc(card.when)}</div>`}
           <div class="rcIcon">${r.icon}</div><div class="rcName">${esc(r.name)}</div>
           <div class="rcText">${esc(card.text)}</div>
-          <div class="rcState">${you.cardUsed ? 'USED (face up)' : usable ? '▶ READY — press [G]' : esc(you.ability.reason || 'face down')}</div>
+          <div class="rcState">${you.cardUsed ? (r.simple ? '✖ USED — expended for the rest of the match' : 'USED (face up)') : usable ? '▶ READY — press [G]' : esc(r.simple ? 'Play it during the Mutiny Vote [G]' : you.ability.reason || 'face down')}</div>
+          ${r.simple && !you.cardUsed ? `<div class="rcDiscard"><span>hold <b>[Q]</b> 3 s to discard</span><div class="rcDBar"><div id="rcDFill"></div></div></div>` : ''}
         </div>`;
       if (bb.dataset.h !== bbHtml) { bb.dataset.h = bbHtml; bb.innerHTML = bbHtml; $('#roleCard').onclick = () => game.useAbility(); }
     }
@@ -244,7 +323,17 @@ export class UI {
     cp.style.display = 'block';
     const you = st.you, name = id => st.players.find(p => p.id === id)?.name ?? '?';
     let html = '';
-    if (c.sub === CER.VOTE) {
+    if (c.sub === CER.VOTE && c.simple) {
+      const P = id => st.players.find(p => p.id === id);
+      const mP = P(c.nominatedBy ?? st.masterId), eP = P(st.execId), master = P(st.masterId);
+      html += `<div class="cpTitle">${avatar(mP)} nominated ${avatar(eP)} as Executioner — APPROVE or MUTINY?</div>
+        <div class="cpNote">⚔️ <b>Strict majority of MUTINY</b>: ${esc(master?.name ?? 'the Master')} & ${esc(eP?.name ?? 'the Executioner')} are overthrown — a random eligible minion becomes Master, picks an Executioner and goes <b>straight to the execution</b> (one vote per milestone).<br>🤝 Tie or majority APPROVE: ${esc(eP?.name ?? 'the Executioner')} executes.</div>`;
+      if (c.voter) html += `<div class="voteRow"><button class="vbtn ${c.myVote === 0 ? 'sel' : ''}" data-v="0"><span class="k">1</span> 🤝 APPROVE</button><button class="vbtn mut ${c.myVote === 1 ? 'sel' : ''}" data-v="1"><span class="k">2</span> ⚔️ MUTINY</button></div>`;
+      html += `<div class="cpNote">${c.decided ?? 0}/${c.voters ?? 0} decided • 🃏 Role cards can be played NOW with [G]</div>`;
+    } else if (c.sub === CER.ELIMINATE) {
+      html += `<div class="cpTitle">${esc(name(st.masterId))} chooses which captive falls into the abyss</div>`;
+      html += st.masterId === you.id ? '<div class="cpNote big">Aim at a captive to read its glyph • walk to its lever and press <b>E</b> to open the trapdoor</div>' : '<div class="cpNote">Only the Master can read the glyphs. You are frozen until a lever is pulled.</div>';
+    } else if (c.sub === CER.VOTE) {
       const P = id => st.players.find(p => p.id === id);
       const mP = P(c.nominatedBy ?? st.masterId), eP = P(st.execId), master = P(st.masterId);
       html += `<div class="cpTitle">${avatar(mP)} nominated ${avatar(eP)} as Executioner. Do you agree?</div>
@@ -281,9 +370,9 @@ export class UI {
       if (c.mode === 'MUTENESS') html += '<div class="cpNote">Cursed player cannot be nominated for Master of Ceremonies/Executioner during the next sacrifice.</div>';
       if (st.masterId === you.id && ['INSPECTION', 'MUTENESS', 'FLOGGING'].includes(c.mode)) html += `<div class="cpNote big">${c.mode === 'FLOGGING' ? '⛓️ Whip in hand: strike a player (LMB)' : c.mode === 'INSPECTION' ? 'Strike a player to reveal their cult (LMB)' : 'Slap a player to curse them (LMB)'}</div>`;
     } else if (c.sub === CER.CURSE) {
-      const m = { eye: '👁️ Eye of Truth — the Executioner peeks at one minion', abyss: '🗝️ Call of the Abyss — the Master hands out the Prison key', initiation: '🔮 Dark Initiation', banner: '' }[c.mode];
+      const m = { eye: c.simple ? '👁️ Insight Eye — the Master learns one minion\'s cult' : '👁️ Eye of Truth — the Executioner peeks at one minion', abyss: '🗝️ Call of the Abyss — the Master hands out the Prison key', initiation: '🔮 Dark Initiation', banner: '' }[c.mode];
       if (m) html += `<div class="cpTitle">${m}</div>`;
-      if ((c.mode === 'eye' && st.execId === you.id) || (c.mode === 'abyss' && st.masterId === you.id) || (c.mode === 'initiation' && you.leader)) html += '<div class="cpNote big">Walk up to a minion and strike them (LMB)</div>';
+      if ((c.mode === 'eye' && (c.eyeHolder ?? st.execId) === you.id) || (c.mode === 'abyss' && st.masterId === you.id) || (c.mode === 'initiation' && you.leader)) html += '<div class="cpNote big">Walk up to a minion and strike them (LMB)</div>';
     } else if (c.sub === CER.DEBATE) {
       html += `<div class="cpTitle">DEBATE — New Hazard in ${c.infinite ? '∞' : Math.ceil(c.t) + 's'}</div><div class="cpNote">Global voice (open mic) & chat [Enter] in the Sanctuary.${c.lastSacrifice ? ` Sacrificed: ${FACTION_INFO[c.lastSacrifice.faction].icon} ${FACTION_INFO[c.lastSacrifice.faction].short} • ${CURSES[c.lastSacrifice.curse].name}` : ''}</div>${c.lastSacrifice?.resolution ? `<div class="cpNote resLine">↳ ${esc(c.lastSacrifice.resolution)}</div>` : ''}`;
     } else if (c.sub === CER.RESULT && c.summary) {
@@ -328,10 +417,10 @@ export class UI {
   }
   setTooltip(html) { const t = $('#tooltip'); if (!html) { t.style.display = 'none'; return; } t.style.display = ''; if (t.dataset.h !== html) { t.dataset.h = html; t.innerHTML = html; } }
 
-  npcTooltip(n) {
+  npcTooltip(n, simple = false) {
     if (n.faction) {
       const f = FACTION_INFO[n.faction], c = CURSES[n.curse];
-      return `<div class="glyph">${glyphSVG(n.faction, n.curse)}</div><div><div style="color:${f.glyph};font-weight:bold">${f.name}</div><div class="cur">${c.name}</div><div class="cdesc">${esc(c.desc)}</div></div>`;
+      return `<div class="glyph">${glyphSVG(n.faction, n.curse)}</div><div><div style="color:${f.glyph};font-weight:bold">${f.name}</div><div class="cur">${c.name}</div><div class="cdesc">${esc(curseDesc(n.curse, simple))}</div></div>`;
     }
     return `<div class="glyph unknown">?</div><div><div style="font-weight:bold">[Unknown Captive]</div><div class="cdesc">Its runic glyph is hidden under the sack.</div></div>`;
   }
@@ -372,7 +461,7 @@ export class UI {
     else if (p.known) pre = FACTION_INFO[p.known].icon + ' ';                                                   // inspection / eye / chaos pair
     const not = p.publicNot ? `<div class="pNot">not ${FACTION_INFO[p.publicNot].icon}</div>` : '';
     return `${bubble ? `<div class="bubble">${esc(bubble)}</div>` : ''}${extraLabel ? `<div class="pLabel" style="color:${extraLabel.color}">${esc(extraLabel.text)}</div>` : ''}
-      <div class="pTop">${top.join(' ')}</div><div class="pName">${pre}${esc(p.name)} <span class="pCry">💎${p.crystals}</span></div>${not}`;
+      <div class="pTop">${top.join(' ')}</div><div class="pName">${pre}${esc(p.name)}${st.simple ? '' : ` <span class="pCry">💎${p.crystals}</span>`}</div>${not}`;
   }
 
   factionLine(p, st) {
@@ -394,7 +483,7 @@ export class UI {
     const held = p.tool ? TOOLS[p.tool]?.name : p.item ? ITEM_TYPES[p.item]?.name : p.npc ? 'a bound captive' : null;
     const cardState = p.roleUsed === undefined ? '(hidden from others)' : p.roleUsed ? 'card used — face up' : 'card re-armed — face down';
     return `${bubble ? `<div class="bubble">${esc(bubble)}</div>` : ''}${extraLabel ? `<div class="pLabel" style="color:${extraLabel.color}">${esc(extraLabel.text)}</div>` : ''}
-      ${p.talking ? '<div class="pTop"><span class="pTalk" title="speaking">🔊</span></div>' : ''}<div class="pCard"><div class="pcName"><span style="color:${p.color}">●</span> ${esc(p.name)} <span class="pCry">💎${p.crystals}</span></div>
+      ${p.talking ? '<div class="pTop"><span class="pTalk" title="speaking">🔊</span></div>' : ''}<div class="pCard"><div class="pcName"><span style="color:${p.color}">●</span> ${esc(p.name)}${st.simple ? '' : ` <span class="pCry">💎${p.crystals}</span>`}</div>
       <div class="pcRole">${r ? `${r.icon} <b>${esc(r.name)}</b> <small>(${cardState})</small><div class="pDesc">${esc(roleCard(r.id, { threshold: st.balance.threshold }).text)}</div>` : '🂠 Role: hidden — card not revealed yet'}</div>
       <div class="pcFac">${this.factionLine(p, st)}</div>
       ${stat.length || held ? `<div class="pcStat">${stat.join(' • ')}${held ? `${stat.length ? ' • ' : ''}✋ ${esc(held)}` : ''}</div>` : ''}</div>`;
@@ -422,10 +511,10 @@ export class UI {
     const render = () => {
       const step = role.targets[chosen.length];
       if (!step) { this.closeModal(); onConfirm(chosen); return; }
-      const others = st.players.filter(p => !p.ghost);
+      const others = st.players.filter(p => !p.ghost && (step.filter !== 'voter' || (p.id !== st.masterId && p.id !== st.execId)) && (step.filter !== 'exhausted' || p.exhausted) && (step.filter !== 'not_exhausted' || !p.exhausted) && (step.filter !== 'used_card' || (p.roleUsed && p.id !== st.you.id)) && (step.filter !== 'eligible_exec_new' || (p.id !== st.masterId && p.id !== st.execId && !p.exhausted && !p.muted)));
       const cc = roleCard(role.id, { threshold: st.balance.threshold });
-      const m = this.modal(`<h3>${role.icon} ${esc(role.name)}</h3><p><small><b>WHEN TO USE:</b> ${esc(cc.when)}</small><br>${esc(cc.text)}</p><h4>${chosen.length + 1}/${role.targets.length}: ${esc(step.label)}</h4>
-        <div class="plist">${others.map(p => `<button class="pbtn" data-id="${p.id}" ${chosen.includes(p.id) && step.filter !== 'any' ? 'disabled' : ''}><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''} 💎${p.crystals}</button>`).join('')}</div>`);
+      const m = this.modal(`<h3>${role.icon} ${esc(role.name)}</h3><p>${role.simple ? '' : `<small><b>WHEN TO USE:</b> ${esc(cc.when)}</small><br>`}${esc(cc.text)}</p><h4>${chosen.length + 1}/${role.targets.length}: ${esc(step.label)}</h4>
+        <div class="plist">${others.map(p => `<button class="pbtn" data-id="${p.id}" ${chosen.includes(p.id) && step.filter !== 'any' ? 'disabled' : ''}><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''}${st.simple ? '' : ' 💎' + p.crystals}</button>`).join('')}</div>`);
       m.querySelectorAll('.pbtn').forEach(b => b.onclick = () => { chosen.push(+b.dataset.id); render(); });
     };
     render();
@@ -520,8 +609,8 @@ export class UI {
       if (p.pact) return '<span title="Blood pact">🩸 Blood</span>';
       return p.publicNot ? `<span class="small">not ${FACTION_INFO[p.publicNot].icon}</span>` : '<span class="small">?</span>';
     };
-    const players = `<h3>MINIONS</h3><table><tr class="small"><th></th><th>Status</th><th>💎</th><th>Role</th><th>Cult</th></tr>${st.players.map(p => `<tr${p.id === st.you.id ? ' style="background:rgba(255,215,94,.08)"' : ''}><td><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.bot ? '🤖' : ''}</td><td>${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''}${p.muted ? '🤐' : ''}${p.ghost ? '👻' : ''}${p.key ? '🗝️' : ''}${p.ward ? '🛡️' : ''}</td><td>${p.crystals}</td><td>${p.role ? ROLE_BY_ID[p.role].icon + ' ' + esc(ROLE_BY_ID[p.role].name) + (p.roleUsed ? ' <span class="small">(used)</span>' : '') : '🂠'}</td><td>${facTxt(p)}</td></tr>`).join('')}</table>
-      <div class="scSub">Altar: 🔥${st.tally.fire} 🩸${st.tally.blood} 🔮${st.tally.chaos} • Rebellion threshold ${st.balance.threshold} 💎 • ${st.milestones} milestones${meP ? '' : ''}</div>`;
+    const players = `<h3>MINIONS</h3><table><tr class="small"><th></th><th>Status</th>${st.simple ? '' : '<th>💎</th>'}<th>Role</th><th>Cult</th></tr>${st.players.map(p => `<tr${p.id === st.you.id ? ' style="background:rgba(255,215,94,.08)"' : ''}><td><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.bot ? '🤖' : ''}</td><td>${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''}${p.muted ? '🤐' : ''}${p.ghost ? '👻' : ''}${p.key ? '🗝️' : ''}${p.ward ? '🛡️' : ''}</td>${st.simple ? '' : `<td>${p.crystals}</td>`}<td>${p.role ? ROLE_BY_ID[p.role].icon + ' ' + esc(ROLE_BY_ID[p.role].name) + (p.roleUsed ? ' <span class="small">(used)</span>' : '') : '🂠'}</td><td>${facTxt(p)}</td></tr>`).join('')}</table>
+      <div class="scSub">${st.simple ? '<b>SIMPLIFIED MODE</b> • ' : ''}Altar: 🔥${st.tally.fire} 🩸${st.tally.blood} 🔮${st.tally.chaos}${st.simple ? ' • Mutiny: strict majority' : ` • Rebellion threshold ${st.balance.threshold} 💎`} • ${st.milestones} milestones${meP ? '' : ''}</div>`;
     if ($('#scPlayers').dataset.h !== players) { $('#scPlayers').dataset.h = players; $('#scPlayers').innerHTML = players; }
     // debug-override indicator lives here (above the log), not on the HUD
     const dbg = $('#scDbg'), ov = this.dbgOverrides || [];
@@ -545,6 +634,6 @@ export class UI {
 
 function cerTitle(st) {
   const c = st.cer;
-  return ({ ANNOUNCE: 'Assembling', NOMINATE: 'Nomination', VOTE: 'Loyalty check', COUNT: 'Counting', REACTION: 'Reaction time', EXECUTION: 'Execution', CURSE: 'Curse', EVENT: MILESTONE_EVENTS[c.mode]?.name || 'Milestone event', DEBATE: 'Debate — New Hazard in', RESULT: 'Outcome' })[c.sub] || '';
+  return ({ ANNOUNCE: 'Assembling', ELIMINATE: 'Lever — drop one captive', NOMINATE: 'Nomination', VOTE: c.simple ? 'Approve or Mutiny' : 'Loyalty check', COUNT: 'Counting', REACTION: 'Reaction time', EXECUTION: 'Execution', CURSE: 'Curse', EVENT: MILESTONE_EVENTS[c.mode]?.name || 'Milestone event', DEBATE: 'Debate — New Hazard in', RESULT: 'Outcome' })[c.sub] || '';
 }
 export { ROLES };
