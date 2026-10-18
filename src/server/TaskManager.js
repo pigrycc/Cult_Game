@@ -363,7 +363,7 @@ export class TaskManager {
         if (s) pt('spot', s, `${d.name}${d.tool ? ' — needs ' + TOOLS[d.tool].name : ''} (hold E)`, true, { tool: d.tool, need: this.need(d.time), verb: d.name });
         break;
       }
-      case 'stack': pt('spot', d.spots[0], `${d.name} — ride a friend's back (E on them) + ${TOOLS[d.tool].name}, hold E`, true, { tool: d.tool, high: true, need: this.need(d.time), verb: 'Tightening the main valve' }); break;
+      case 'stack': pt('spot', d.spots[0], `${d.name} — ride a friend's back (E on them)${d.tool ? ' + ' + TOOLS[d.tool].name : ''}, hold E`, true, { tool: d.tool, high: true, need: this.need(d.time), verb: d.name }); break;
       case 'fetch': case 'books':
         if (d.src) pt('src', d.src, d.tool ? `Scoop ${ITEM_TYPES[d.item].name} (needs ${TOOLS[d.tool].name})` : `Take ${ITEM_TYPES[d.item].name}`, false, { tool: d.tool });
         d.steps.forEach((s, i) => pt('s' + i, s, `${i === d.steps.length - 1 ? 'Deliver' : 'Process'} ${ITEM_TYPES[d.item].name}${s.time ? ' (hold E)' : ''}`, s.time > 0, { step: i, need: this.need(s.time || 0), verb: `${i === d.steps.length - 1 ? 'Delivering' : 'Processing'} ${ITEM_TYPES[d.item].name}` }));
@@ -458,7 +458,7 @@ export class TaskManager {
       case 'collect': this.useCollect(p, inst, part, pt); break;
       case 'stack':
         if (!p.ridingOn) return this.m.toast(p.id, 'Too high! Climb on another minion\'s back first (E on a minion).', 'warn');
-        if (!needTool(d.tool)) return;
+        if (d.tool && !needTool(d.tool)) return;
         p.hold = { target, uid: inst.uid, need: this.need(d.time), pos: pt, high: true, onDone: () => this.complete(inst, [p, this.m.P(p.ridingOn)]) };
         break;
       case 'fetch': case 'books': this.useFetch(p, inst, part, pt, needTool); break;
@@ -504,8 +504,26 @@ export class TaskManager {
   carrierOf(inst) { return inst.data.carrier; }
   /** Per-minigame config the client overlay needs (kept small; the server stays authoritative over task progress). */
   gameCfg(d) {
-    if (d.game === 'scrub') return { threshold: 0.9, dirty: d.tool === 'mop' ? 'lard' : d.tool === 'rag' ? 'dust' : 'soot' };
-    return {};
+    const R = (a, b) => a + Math.random() * (b - a);
+    switch (d.game) {
+      case 'scrub':  return { threshold: 0.9, dirty: d.tool === 'mop' ? 'lard' : d.tool === 'rag' ? 'dust' : 'soot' };
+      case 'catch':  return { quota: 8, speed: 1 };                                   // Drain Condensate — catch 8 drips
+      case 'derust': return { gears: 7, rusty: shuffle([0, 1, 2, 3, 4, 5, 6]).slice(0, 3 + randInt(0, 1)).sort((a, b) => a - b) };  // 3–4 rusted gears
+      case 'whack':  return { hits: 7, label: d.tool === 'cleaver' ? 'chop' : 'strike' };
+      case 'grind':  return { sweetLo: +R(0.55, 0.68).toFixed(3), sweetHi: +R(0.78, 0.92).toFixed(3), speed: +R(0.55, 0.8).toFixed(3) };
+      case 'mix':    return this.newMix();                                            // target colour + 3 base pours
+      case 'simon':  return { vials: 8, rounds: 3, seq: Array.from({ length: 3 }, () => randInt(0, 7)) };
+      case 'pour':   return { sweetLo: +R(0.6, 0.72).toFixed(3), sweetHi: +R(0.82, 0.95).toFixed(3), fill: +R(0.6, 0.95).toFixed(3) };
+      case 'plunge': return { plunges: 6 };
+      case 'gauges': return { gauges: 3 };
+      default:       return {};
+    }
+  }
+  /** Colour-mix target: 3 base pours (R/Y/B) chosen server-side; the client must recreate the mix. */
+  newMix() {
+    const bases = ['r', 'y', 'b'];
+    const recipe = Array.from({ length: 3 }, () => bases[randInt(0, 2)]).sort();
+    return { bases, recipe };
   }
   /**
    * A minigame overlay reports success. We validate the player is still at the task, holds the right tool, and that a

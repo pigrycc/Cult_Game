@@ -556,8 +556,17 @@ export class UI {
   // ------------------------------------------------------------------ 2D minigames (CSV task overhaul)
   /** Dispatch to the right minigame overlay by m.game. Each calls onDone() exactly once on success. */
   minigame(m, onDone) {
-    if (m.game === 'scrub') return this.scrubGame(m, onDone);
+    const fn = {
+      scrub: 'scrubGame', catch: 'catchGame', derust: 'derustGame', whack: 'whackGame', grind: 'grindGame',
+      mix: 'mixGame', simon: 'simonGame', pour: 'pourGame', plunge: 'plungeGame', gauges: 'gaugesGame',
+    }[m.game];
+    if (fn && this[fn]) return this[fn](m, onDone);
     onDone();                                       // unknown game type → trust completion (forward-compatible)
+  }
+
+  /** Shared helper: open a minigame modal; `done` is called once on success. Returns the modal element. */
+  gameModal(title, hint, body) {
+    return this.modal(`<h3>${title}</h3><p class="small">${hint}</p>${body}`, { wide: true, onClose: () => {} });
   }
 
   /**
@@ -594,7 +603,7 @@ export class UI {
     cv.onmousemove = e => { if (painting) { const p = at(e); wipe(p.x, p.y); } };
     window.addEventListener('mouseup', () => { painting = false; last = null; });
     const tick = () => {
-      if (done) return;
+      if (done || !el.isConnected) return;
       const frac = sample();
       $('#scrubFill', el).style.width = Math.min(100, frac / need * 100) + '%';
       $('#scrubPct', el).textContent = Math.min(100, Math.round(frac / need * 100)) + '%';
@@ -602,6 +611,244 @@ export class UI {
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
+  }
+
+  /** CATCH (Drain Condensate): move a bucket left/right to catch dripping water until the quota is met. */
+  catchGame(m, onDone) {
+    const cfg = m.cfg || {}, quota = cfg.quota ?? 8;
+    const el = this.gameModal('🪣 ' + esc(m.name), 'Move the mouse to slide the bucket and catch the falling drips.',
+      `<div class="mgWrap"><canvas id="mgC" width="520" height="320"></canvas><div class="mgInfo">Caught <b id="mgN">0</b> / ${quota}</div></div>`);
+    const cv = $('#mgC', el), ctx = cv.getContext('2d');
+    let caught = 0, bx = cv.width / 2, done = false, drops = [], spawnT = 0;
+    cv.onmousemove = e => { const r = cv.getBoundingClientRect(); bx = (e.clientX - r.left) * cv.width / r.width; };
+    const BW = 70, BY = cv.height - 26;
+    let last = performance.now();
+    const loop = now => {
+      if (done || !el.isConnected) return;
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      spawnT -= dt; if (spawnT <= 0) { spawnT = 0.5 + Math.random() * 0.5; drops.push({ x: 20 + Math.random() * (cv.width - 40), y: -10, v: 120 + Math.random() * 90 }); }
+      ctx.fillStyle = '#101820'; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = '#5a4a2a'; ctx.fillRect(bx - BW / 2, BY, BW, 20); ctx.fillStyle = '#3a2e18'; ctx.fillRect(bx - BW / 2, BY, BW, 5);
+      for (const d of drops) { d.y += d.v * dt; ctx.fillStyle = '#7fd8ff'; ctx.beginPath(); ctx.ellipse(d.x, d.y, 5, 8, 0, 0, 7); ctx.fill(); }
+      window.__catchState = { drops: drops.map(d => ({ x: d.x, y: d.y })), bw: BW };     // test hook
+      drops = drops.filter(d => {
+        if (d.y >= BY - 4 && d.y <= BY + 20 && Math.abs(d.x - bx) < BW / 2) { caught++; $('#mgN', el).textContent = caught; return false; }
+        return d.y < cv.height + 20;
+      });
+      if (caught >= quota) { done = true; onDone(); this.closeModal(); return; }
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
+
+  /** DERUST (Oil Rusty Mechanisms): click-hold 2 s on each rusted gear to strip the rust. */
+  derustGame(m, onDone) {
+    const cfg = m.cfg || {}, rusty = new Set(cfg.rusty || [0, 1, 2]);
+    const gears = cfg.gears ?? 7;
+    const cleaned = new Set(), need = rusty.size;
+    const cells = Array.from({ length: gears }, (_, i) => `<div class="gear ${rusty.has(i) ? 'rusty' : 'ok'}" data-i="${i}"><div class="gearFill"></div>⚙️</div>`).join('');
+    const el = this.gameModal('🛢️ ' + esc(m.name), 'Click and hold on each RUSTED gear (brown) for 2 s to strip the rust. Clean gears can be left alone.',
+      `<div class="gearGrid">${cells}</div><div class="mgInfo"><b id="mgN">0</b> / ${need} rusted gears cleaned</div>`);
+    let done = false;
+    el.querySelectorAll('.gear.rusty').forEach(g => {
+      const i = +g.dataset.i; let t0 = null, raf = null;
+      const fill = g.querySelector('.gearFill');
+      const step = () => { if (t0 == null) return; const f = Math.min(1, (performance.now() - t0) / 2000); fill.style.height = (f * 100) + '%'; if (f >= 1) { g.classList.remove('rusty'); g.classList.add('ok'); cleaned.add(i); $('#mgN', el).textContent = cleaned.size; if (cleaned.size >= need && !done) { done = true; onDone(); this.closeModal(); } return; } raf = requestAnimationFrame(step); };
+      const start = () => { if (cleaned.has(i)) return; t0 = performance.now(); step(); };
+      const stop = () => { t0 = null; cancelAnimationFrame(raf); if (!cleaned.has(i)) fill.style.height = '0%'; };
+      g.onmousedown = start; g.onmouseup = stop; g.onmouseleave = stop;
+    });
+    window.addEventListener('mouseup', () => {}, { once: true });
+  }
+
+  /** WHACK (Forge Wedges / Chop Meat): hit targets that pop up at random, N times. */
+  whackGame(m, onDone) {
+    const cfg = m.cfg || {}, need = cfg.hits ?? 7, chop = cfg.label === 'chop';
+    const el = this.gameModal((chop ? '🔪 ' : '🔨 ') + esc(m.name), chop ? 'Click each glowing cut mark as it appears.' : 'Click each glowing impact point as it appears on the metal.',
+      `<div class="mgWrap"><canvas id="mgC" width="520" height="300"></canvas><div class="mgInfo"><b id="mgN">0</b> / ${need} ${chop ? 'chops' : 'strikes'}</div></div>`);
+    const cv = $('#mgC', el), ctx = cv.getContext('2d');
+    let hits = 0, done = false, target = null, tLife = 0;
+    const spawn = () => { target = { x: 40 + Math.random() * (cv.width - 80), y: 40 + Math.random() * (cv.height - 80), r: 26 }; tLife = 1.4; };
+    spawn();
+    cv.onmousedown = e => {
+      const r = cv.getBoundingClientRect(); const x = (e.clientX - r.left) * cv.width / r.width, y = (e.clientY - r.top) * cv.height / r.height;
+      if (target && Math.hypot(x - target.x, y - target.y) < target.r + 6) { hits++; $('#mgN', el).textContent = hits; if (hits >= need) { done = true; onDone(); this.closeModal(); return; } spawn(); }
+    };
+    let last = performance.now();
+    const loop = now => {
+      if (done || !el.isConnected) return; const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      tLife -= dt; if (tLife <= 0) spawn();
+      window.__whackTarget = target;                                            // test hook
+      ctx.fillStyle = chop ? '#2a1416' : '#1a1410'; ctx.fillRect(0, 0, cv.width, cv.height);
+      if (!chop) { ctx.fillStyle = '#4a1e10'; ctx.fillRect(cv.width / 2 - 120, cv.height / 2 - 18, 240, 36); }  // glowing blade bar
+      if (target) { const a = 0.5 + 0.5 * Math.sin(now / 90); ctx.fillStyle = chop ? `rgba(255,90,90,${a})` : `rgba(255,180,40,${a})`; ctx.beginPath(); ctx.arc(target.x, target.y, target.r, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
+
+  /** GRIND (Sharpen Blades): a marker sweeps a bar; hold LMB to grind and RELEASE inside the green sweet spot. */
+  grindGame(m, onDone) {
+    const cfg = m.cfg || {}, lo = cfg.sweetLo ?? 0.6, hi = cfg.sweetHi ?? 0.85, speed = cfg.speed ?? 0.7;
+    const el = this.gameModal('🗡️ ' + esc(m.name), 'Hold LMB to grind; the marker sweeps. RELEASE while it is inside the green zone. Overshoot ruins the edge — try again.',
+      `<div class="mgWrap"><canvas id="mgC" width="520" height="120"></canvas><div class="mgInfo" id="mgMsg">Hold LMB…</div></div>`);
+    const cv = $('#mgC', el), ctx = cv.getContext('2d');
+    let pos = 0, dir = 1, grinding = false, done = false;
+    cv.onmousedown = () => { grinding = true; };
+    const release = () => {
+      if (!el.isConnected) { window.removeEventListener('mouseup', release); return; }
+      if (!grinding || done) return; grinding = false;
+      if (pos >= lo && pos <= hi) { done = true; $('#mgMsg', el).textContent = '✔ Perfect edge!'; window.removeEventListener('mouseup', release); onDone(); setTimeout(() => this.closeModal(), 250); }
+      else { pos = 0; $('#mgMsg', el).textContent = '✖ Missed the sweet spot — reset.'; }
+    };
+    cv.onmouseup = release; window.addEventListener('mouseup', release);
+    let last = performance.now();
+    const loop = now => {
+      if (done || !el.isConnected) return; const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (grinding) { pos += dir * speed * dt; if (pos >= 1) { pos = 1; dir = -1; } if (pos <= 0) { pos = 0; dir = 1; } }
+      window.__grindPos = pos;                                                   // test hook
+      ctx.fillStyle = '#15110c'; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = '#2d6a3a'; ctx.fillRect(lo * cv.width, 30, (hi - lo) * cv.width, 60);     // sweet spot
+      ctx.fillStyle = '#ffd75e'; ctx.fillRect(pos * cv.width - 3, 20, 6, 80);                   // marker
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
+
+  /** MIX (Distill): pour base colours into a beaker to recreate the target shade (3 pours). */
+  mixGame(m, onDone) {
+    const cfg = m.cfg || {}, recipe = cfg.recipe || ['r', 'y', 'y'];
+    const COL = { r: [220, 60, 50], y: [230, 200, 40], b: [50, 90, 210] };
+    const name = { r: 'Red', y: 'Yellow', b: 'Blue' };
+    const mix = cols => { if (!cols.length) return [20, 20, 24]; const s = [0, 0, 0]; for (const c of cols) for (let i = 0; i < 3; i++) s[i] += COL[c][i]; return s.map(v => Math.round(v / cols.length)); };
+    const target = mix(recipe), rgb = a => `rgb(${a[0]},${a[1]},${a[2]})`;
+    let poured = [], done = false;
+    const el = this.gameModal('⚗️ ' + esc(m.name), 'Match the Target Flask. Pour 3 times from the base reagents into the beaker. Wrong mix? Reset and try again.',
+      `<div class="mixRow"><div class="mixCol"><div class="mixLbl">Target</div><div class="flask" style="background:${rgb(target)}"></div></div>
+        <div class="mixCol"><div class="mixLbl">Your beaker (<b id="mgN">0</b>/3)</div><div class="flask" id="mixBeaker" style="background:${rgb(mix([]))}"></div>
+        <div class="mixBtns">${recipe.length ? '' : ''}${['r', 'y', 'b'].map(c => `<button class="mixB" data-c="${c}" style="background:${rgb(COL[c])}">${name[c]}</button>`).join('')}<button class="mixReset">Reset</button></div></div></div>`);
+    const refresh = () => { $('#mixBeaker', el).style.background = rgb(mix(poured)); $('#mgN', el).textContent = poured.length; };
+    el.querySelectorAll('.mixB').forEach(b => b.onclick = () => {
+      if (done || poured.length >= 3) return;
+      poured.push(b.dataset.c); refresh();
+      if (poured.length === 3) {
+        const ok = [...poured].sort().join('') === [...recipe].sort().join('');
+        if (ok) { done = true; onDone(); setTimeout(() => this.closeModal(), 300); }
+        else { $('#mgMsgX', el); setTimeout(() => { poured = []; refresh(); }, 500); }
+      }
+    });
+    el.querySelector('.mixReset').onclick = () => { if (!done) { poured = []; refresh(); } };
+  }
+
+  /** SIMON (Flush Research Machine): repeat the flashed colour sequence over 3 growing rounds. */
+  simonGame(m, onDone) {
+    const cfg = m.cfg || {}, N = cfg.vials ?? 8, seq = cfg.seq || [0, 1, 2];
+    const COLORS = ['#ff5252', '#40c4ff', '#ffd740', '#69f0ae', '#e040fb', '#ff9100', '#b2ff59', '#ff80ab'];
+    const el = this.gameModal('🧪 ' + esc(m.name), 'Watch the chamber flash a colour sequence, then click the vials in the same order. 3 rounds, each one longer.',
+      `<div class="simonWrap"><div class="simonChamber" id="simonCh">▶</div><div class="simonGrid">${COLORS.slice(0, N).map((c, i) => `<button class="vial" data-i="${i}" style="background:${c}"></button>`).join('')}</div><div class="mgInfo" id="mgMsg">Round 1 / 3 — watch…</div></div>`);
+    let round = 1, done = false, accepting = false, input = [];
+    const flash = i => { if (!el.isConnected) return; const v = el.querySelectorAll('.vial')[i]; if (!v) return; v.classList.add('lit'); setTimeout(() => v.classList.remove('lit'), 360); };
+    const playback = () => {
+      if (!el.isConnected) return;
+      accepting = false; input = []; $('#mgMsg', el).textContent = `Round ${round} / 3 — watch…`;
+      const show = seq.slice(0, round);
+      show.forEach((i, k) => setTimeout(() => { if (!el.isConnected) return; flash(i); if (k === show.length - 1) setTimeout(() => { if (!el.isConnected) return; accepting = true; $('#mgMsg', el).textContent = `Round ${round} / 3 — your turn`; }, 450); }, 600 * (k + 1)));
+    };
+    const msg = t => { const e = $('#mgMsg', el); if (e) e.textContent = t; };
+    el.querySelectorAll('.vial').forEach(v => v.onclick = () => {
+      if (!accepting || done || !el.isConnected) return;
+      const i = +v.dataset.i; flash(i); input.push(i);
+      const want = seq.slice(0, round);
+      for (let k = 0; k < input.length; k++) if (input[k] !== want[k]) { msg('✖ Wrong — watch again.'); accepting = false; setTimeout(playback, 700); return; }
+      if (input.length === want.length) {
+        if (round >= 3) { done = true; msg('✔ Flushed!'); onDone(); setTimeout(() => this.closeModal(), 300); }
+        else { round++; accepting = false; setTimeout(playback, 700); }
+      }
+    });
+    setTimeout(playback, 500);
+  }
+
+  /** POUR (Add Oil to Lamps): hold LMB to pour; release inside the Min/Max sweet spot. Overflow resets. */
+  pourGame(m, onDone) {
+    const cfg = m.cfg || {}, lo = cfg.sweetLo ?? 0.65, hi = cfg.sweetHi ?? 0.9;
+    const el = this.gameModal('🪔 ' + esc(m.name), 'Hold LMB to pour oil into the lamp. Fill into the green band and release. Overflow past the top empties it — start over.',
+      `<div class="pourWrap"><div class="pourTube"><div class="pourSweet" style="bottom:${lo * 100}%;height:${(hi - lo) * 100}%"></div><div class="pourFill" id="pourFill"></div></div><div class="mgInfo" id="mgMsg">Hold LMB to pour…</div></div>`);
+    let level = 0, pouring = false, done = false;
+    const area = el.querySelector('.pourWrap');
+    area.onmousedown = () => { pouring = true; };
+    const release = () => {
+      if (!el.isConnected) { window.removeEventListener('mouseup', release); return; }
+      if (!pouring || done) return; pouring = false;
+      if (level >= lo && level <= hi) { done = true; $('#mgMsg', el).textContent = '✔ Filled perfectly!'; window.removeEventListener('mouseup', release); onDone(); setTimeout(() => this.closeModal(), 250); }
+      else if (level < lo) $('#mgMsg', el).textContent = 'Not enough — keep pouring.';
+    };
+    area.onmouseup = release; window.addEventListener('mouseup', release);
+    let last = performance.now();
+    const loop = now => {
+      if (done || !el.isConnected) return; const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (pouring) { level += 0.35 * dt; if (level > 1) { level = 0; $('#mgMsg', el).textContent = '✖ Overflow! Reset.'; } }
+      window.__pourLevel = level;                                               // test hook
+      $('#pourFill', el).style.height = (level * 100) + '%';
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
+
+  /** PLUNGE (Unclog Chute): move the mouse up and down to plunge the hook and dislodge the jam. */
+  plungeGame(m, onDone) {
+    const cfg = m.cfg || {}, need = cfg.plunges ?? 6;
+    const el = this.gameModal('🪝 ' + esc(m.name), 'Shove the gaff hook UP and DOWN with the mouse to dislodge the jam.',
+      `<div class="mgWrap"><canvas id="mgC" width="320" height="340"></canvas><div class="mgInfo"><b id="mgN">0</b> / ${need} plunges</div></div>`);
+    const cv = $('#mgC', el), ctx = cv.getContext('2d');
+    let plunges = 0, done = false, my = cv.height / 2, deep = false;
+    // Count plunges from the mouse movement itself (event-driven) so it never depends on the frame rate: a full
+    // down-to-bottom then up-to-top stroke = one plunge.
+    cv.onmousemove = e => {
+      const r = cv.getBoundingClientRect(); my = (e.clientY - r.top) * cv.height / r.height;
+      if (my > cv.height * 0.72) deep = true;
+      else if (deep && my < cv.height * 0.3) { deep = false; plunges++; const n = $('#mgN', el); if (n) n.textContent = plunges; if (plunges >= need && !done) { done = true; onDone(); this.closeModal(); } }
+    };
+    const loop = () => {
+      if (done || !el.isConnected) return;
+      ctx.fillStyle = '#17120c'; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = '#3a2e1c'; ctx.fillRect(cv.width / 2 - 34, 0, 68, cv.height);               // chute shaft
+      ctx.fillStyle = '#6a4a2a'; ctx.fillRect(cv.width / 2 - 44, cv.height - 44, 88, 44);          // jam at the bottom
+      ctx.strokeStyle = '#9aa3ad'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(cv.width / 2, 10); ctx.lineTo(cv.width / 2, my); ctx.stroke();  // gaff shaft
+      ctx.strokeStyle = '#c0c6cc'; ctx.beginPath(); ctx.arc(cv.width / 2 + 8, my, 10, Math.PI, Math.PI * 2.3); ctx.stroke();                      // hook
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
+
+  /** GAUGES (Equalize Pressure): release each overheated gauge's knob when its needle swings into the red zone. */
+  gaugesGame(m, onDone) {
+    const cfg = m.cfg || {}, n = cfg.gauges ?? 3;
+    const el = this.gameModal('🌡️ ' + esc(m.name), 'Each gauge needle swings. Click a gauge the moment its needle is inside the RED danger zone to vent it.',
+      `<div class="mgWrap"><canvas id="mgC" width="520" height="220"></canvas><div class="mgInfo"><b id="mgN">0</b> / ${n} gauges vented</div></div>`);
+    const cv = $('#mgC', el), ctx = cv.getContext('2d');
+    const gauges = Array.from({ length: n }, (_, i) => ({ cx: (i + 0.5) * cv.width / n, cy: 110, ang: Math.random() * Math.PI, spd: 1.4 + Math.random() * 1.2, dir: 1, vented: false }));
+    let vented = 0, done = false;
+    cv.onmousedown = e => {
+      const r = cv.getBoundingClientRect(); const x = (e.clientX - r.left) * cv.width / r.width;
+      for (const g of gauges) { if (g.vented) continue; if (Math.abs(x - g.cx) < cv.width / n / 2) { if (g.ang > Math.PI * 0.72) { g.vented = true; vented++; $('#mgN', el).textContent = vented; } } }
+    };
+    let last = performance.now();
+    const loop = now => {
+      if (done || !el.isConnected) return; const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      ctx.fillStyle = '#141018'; ctx.fillRect(0, 0, cv.width, cv.height);
+      for (const g of gauges) {
+        if (!g.vented) { g.ang += g.dir * g.spd * dt; if (g.ang >= Math.PI) { g.ang = Math.PI; g.dir = -1; } if (g.ang <= 0) { g.ang = 0; g.dir = 1; } }
+        const R = 56;
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(g.cx, g.cy, R, Math.PI, 0); ctx.stroke();                 // dial
+        ctx.strokeStyle = '#c0392b'; ctx.beginPath(); ctx.arc(g.cx, g.cy, R, Math.PI * 0.72, 0); ctx.stroke();                           // red zone
+        const a = Math.PI - g.ang;                                                                                                       // needle (0..PI maps right..left)
+        ctx.strokeStyle = g.vented ? '#69f0ae' : '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(g.cx, g.cy); ctx.lineTo(g.cx + Math.cos(a) * R, g.cy - Math.sin(a) * R); ctx.stroke();
+        ctx.fillStyle = g.vented ? '#69f0ae' : '#cdbf9d'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(g.vented ? '✔ vented' : 'click in red', g.cx, g.cy + 28);
+      }
+      if (vented >= n) { done = true; onDone(); this.closeModal(); return; }
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
   }
 
   // ------------------------------------------------------------------ finale & scoreboard
