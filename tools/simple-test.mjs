@@ -143,11 +143,12 @@ const roleCase = (id, setup) => { const ctx = mk(7); toVote(ctx.m); const v = vo
 { const { m } = mk(); const seen = new Set(); for (let i = 0; i < 300; i++) seen.add(m.npcs.draw().curse);
   ok([...seen].every(c => SIMPLE_CURSES.includes(c)) && seen.size === 3, `only the 3 simplified curses spawn (${[...seen].join(', ')})`); }
 { const { m } = mk(); toVote(m); voters(m).forEach(p => m.cer.vote(p, 0)); m.cer.t = 0; step(m);
-  const e = m.P(m.execId); const n = m.npcs.altar()[0]; n.curse = 'DARK_INITIATION'; if (e.faction === FACTIONS.CHAOS) e.faction = FACTIONS.FIRE; e.immuneChaos = false;
-  m.cer.sacrificeNpc(n); ok(e.faction === FACTIONS.CHAOS, 'Dark Initiation converts the Executioner'); }
-{ const { m } = mk(); toVote(m); voters(m).forEach(p => m.cer.vote(p, 0)); m.cer.t = 0; step(m);
-  const e = m.P(m.execId); const n = m.npcs.altar()[0]; n.curse = 'DARK_INITIATION'; e.faction = FACTIONS.BLOOD; e.immuneChaos = true;
-  m.cer.sacrificeNpc(n); ok(e.faction === FACTIONS.BLOOD, '…unless the Executioner is immune'); }
+  const L = m.P(m.chaosLeaderId); const n = m.npcs.altar()[0]; n.curse = 'DARK_INITIATION'; m.cer.sacrificeNpc(n);
+  ok(m.cer.sub === CER.CURSE && m.cer.mode === 'initiation', 'Dark Initiation (Simplified = classic): the Chaos Leader chooses a player to convert');
+  const cand = m.cer.initiationCandidates()[0];
+  ok(cand && cand.faction !== FACTIONS.CHAOS && !cand.immuneChaos, 'conversion targets exclude Chaos members and the immune');
+  Object.assign(L.body, { x: 0, z: 0 }); Object.assign(cand.body, { x: 1, z: 0 }); m.cer.lmb(L, cand.id);
+  ok(cand.faction === FACTIONS.CHAOS, 'the Chaos Leader slaps a chosen player and converts them to Chaos'); }
 { const { m } = mk(); toVote(m); voters(m).forEach(p => m.cer.vote(p, 0)); m.cer.t = 0; step(m);
   const mm = m.P(m.masterId); const n = m.npcs.altar()[0]; n.curse = 'EYE_OF_TRUTH'; m.cer.sacrificeNpc(n);
   ok(m.cer.sub === CER.CURSE && m.cer.mode === 'eye' && m.cer.eyeHolder() === mm.id && !mm.frozen, 'Insight Eye: the MASTER inspects (not the Executioner)');

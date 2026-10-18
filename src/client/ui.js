@@ -233,11 +233,16 @@ export class UI {
       const nextEv = MILESTONE_EVENTS[st.track[nextIdx]];
       $('#barLabel').innerHTML = `<span class="red">▮ CRYPT DESTABILIZATION ${(st.bars.red * 100).toFixed(0)}%</span> &nbsp; <span class="yel">▮ STABILIZATION ${(st.bars.yellow * 100).toFixed(0)}%</span> &nbsp; Next: ${nextEv ? nextEv.icon + ' ' + nextEv.name : '—'} ${st.bars.running ? '' : '<span class="frz">❄ RED FROZEN</span>'}`;
     }
-    // --- task board
+    // --- personal task board (your 2 solo + 1 co-op; plus co-op tasks a teammate called for help on)
     const tb = $('#taskBoard'); tb.style.display = st.phase === PHASE.WORK || st.phase === PHASE.CEREMONY ? '' : 'none';
     if (st.tasks) {
-      tb.innerHTML = `<div class="tbTitle">ACTIVE CRYPT TASKS:</div>` + st.tasks.map(t =>
-        `<div class="tbRow ${t.type !== 'solo' ? 'coop' : ''}"><span class="tbSw" style="background:${TASK_PALETTE[t.color] || '#fff'}"></span><span class="tbTag">[${t.tag}]</span> ${esc(t.name)}${t.tool ? ` <span class="tbTool" style="color:${TASK_PALETTE[t.color] || '#fff'}">🔧 ${esc(TOOLS[t.tool]?.name || t.tool)}</span>` : ''} <span class="tbType">[${t.type === 'solo' ? '👤 SOLO' : t.type === 'coop3' ? '👥👤 CO-OP×3' : '👥 CO-OP'}]</span> <span class="tbCoin">(+${t.coins}💰)</span>${t.progress > 0 ? `<div class="tbProg"><div style="width:${t.progress * 100}%"></div></div>` : ''}</div>`).join('');
+      const solo = st.tasks.filter(t => t.kind !== 'coop');
+      const coop = st.tasks.filter(t => t.kind === 'coop');
+      const partnerChips = t => (t.partners || []).map(p => `<span class="tbMate" style="--c:${p.color}">●</span>${esc(p.name)}`).join(' ');
+      const row = t => `<div class="tbRow ${t.kind === 'coop' ? 'coop' : ''}${t.mine ? '' : ' called'}"><span class="tbSw" style="background:${TASK_PALETTE[t.color] || '#fff'}"></span><span class="tbTag">[${t.tag}]</span> ${esc(t.name)}${t.tool ? ` <span class="tbTool" style="color:${TASK_PALETTE[t.color] || '#fff'}">🔧 ${esc(TOOLS[t.tool]?.name || t.tool)}</span>` : ''}${t.kind === 'coop' && t.partners?.length ? ` <span class="tbWith">(with ${partnerChips(t)})</span>` : ''}${!t.mine ? ' <span class="tbHelp">🆘 help!</span>' : ''} <span class="tbCoin">(+${t.coins}💰)</span>${t.progress > 0 ? `<div class="tbProg"><div style="width:${t.progress * 100}%"></div></div>` : ''}</div>`;
+      const html = `<div class="tbTitle">YOUR TASKS</div>${solo.map(row).join('')}`
+        + (coop.length ? `<div class="tbTitle coop">CO-OP${st.you && !st.simple ? ' <span class="tbHint">[H] call for help</span>' : ' <span class="tbHint">[H] call for help</span>'}</div>${coop.map(row).join('')}` : '');
+      if (tb.dataset.h !== html) { tb.dataset.h = html; tb.innerHTML = html; }
     }
     // --- lobby info
     const li = $('#lobbyInfo');

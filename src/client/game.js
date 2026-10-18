@@ -133,6 +133,7 @@ export class Game {
           this.ui.toast(this.audio.mode === 'open' ? '🎤 Open microphone (voice activation). V = mute / unmute.' : '🎙 Push-to-talk: hold V to speak.', 'info'); break;
         case 'Enter': document.exitPointerLock(); this.ui.openChat(t => this.net.send({ t: 'chat', text: t })); setTimeout(() => { this.keys.clear(); }, 0); break;
         case 'KeyM': this.mini.classList.toggle('bigmap'); break;
+        case 'KeyH': this.callForHelp(); break;
         case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': this.vote(+e.code.slice(5) - 1); break;
         default: break;
       }
@@ -217,6 +218,15 @@ export class Game {
     const c = this.st?.cer;
     if (!c || c.sub !== CER.VOTE || !c.voter) return;
     this.net.send({ t: 'vote', amount: v });
+  }
+
+  /** Broadcast your co-op task to the whole crew so a partner comes to help. */
+  callForHelp() {
+    const st = this.st; if (!st || st.phase !== PHASE.WORK) return;
+    const mine = (st.tasks || []).find(t => t.kind === 'coop' && t.mine);
+    if (!mine) { this.ui.toast('You have no co-op task to call help for.', 'warn'); return; }
+    this.net.send({ t: 'callhelp', uid: mine.uid });
+    this.ui.toast('🆘 You called for help on your co-op task.', 'info');
   }
 
   useAbility() {

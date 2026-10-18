@@ -43,7 +43,14 @@ CONTROLS
   F  shove                         X    buck the minion riding you (they spill half their gold)
   G  reveal your role card          1–4 vote crystals (Simplified: 1 APPROVE, 2 MUTINY)
   V  mute/unmute (open mic)  N push-to-talk mode   Enter text chat   Tab scoreboard   M big map
+  H  call for help on your co-op task (shows it to the whole crew)
   F1 developer debug console
+
+YOUR TASK LIST (Work Phase)
+  You get a short PERSONAL list on the HUD: 2 solo chores + 1 co-op chore (with a named partner). Only your own
+  tasks show floating world markers, so the crypt isn't cluttered. Finish a solo chore and a new one appears after a
+  couple of seconds. A co-op chore names a suggested partner, but ANY two minions who work the station together finish
+  it — press H to call the whole crew for help if your partner wanders off.
 
 DEDICATED / HEADLESS HOST (optional)
   dedicated-server.cjs runs with Node.js 20+:  node dedicated-server.cjs 7777 --debug-all
