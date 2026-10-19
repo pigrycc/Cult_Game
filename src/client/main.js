@@ -3,7 +3,7 @@ import { Net } from './net.js';
 import { UI } from './ui.js';
 import { Game } from './game.js';
 import { Audio } from './audio.js';
-import { DebugMenu } from './debug.js';
+import { DebugMenu, applyHudScale } from './debug.js';
 import { ROLE_BY_ID, PHASE } from '../shared/constants.js';
 import { OnlineHost, listRooms } from './online.js';
 
@@ -22,6 +22,7 @@ async function connect(url, name, token) {
   game = new Game({ net, ui, audio, myId: welcome.id });
   game.startVoice();                                  // open mic from the start (the Host/Join click is the user gesture)
   game.debug = new DebugMenu(net);
+  applyHudScale();                                    // restore personal minimap / task-list HUD scale
   game.debug.aimTarget = () => game.target?.id;
   window.__game = game; // exposed for automated smoke tests
   const H = {
@@ -50,6 +51,7 @@ async function connect(url, name, token) {
     roleChanged: m => ui.toast(`🛠 Your role is now ${ROLE_BY_ID[m.roleId].name}`),
     roleDrop: m => { audio.sfx('appoint'); ui.showRoleDrop(m.roleId); },
     jailerOffer: m => { document.exitPointerLock(); ui.jailer(m, respawn => net.send({ t: 'jailer', respawn })); },
+    coopPing: m => { audio.sfx('chime'); ui.toast(`🤝 ${m.from} needs you at ${m.label} [${m.room}] — go help!`, 'info'); game.pingCoop(m.x, m.z); },
   };
   for (const [k, fn] of Object.entries(H)) net.on(k, fn);
   net.onVoice = buf => audio.playVoice(buf);

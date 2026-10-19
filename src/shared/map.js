@@ -135,6 +135,7 @@ box(-30, 16.8, 4, 1.2, 0.9, 'wood', { deco: 'table' });
 box(27, -16.5, 8, 1.2, 0.9, 'wood', { deco: 'bench_lab' });
 box(34, -8, 2.2, 3, 2.6, 'brass', { deco: 'machine' });
 box(22, -9, 1.6, 1.6, 0.9, 'wood', { deco: 'scale' });
+box(28, -3.0, 2.4, 0.7, 1.3, 'oak', { deco: 'specimenshelf' });   // Sort Glowing Specimens drop-off landmark (compact rack behind the middle slot)
 // Library
 for (let i = 0; i < 3; i++) box(23 + i * 5, 17.2, 4, 1.0, 4.5, 'oak', { deco: 'shelf' });
 box(35.2, 10, 1.0, 8, 4.5, 'oak', { deco: 'shelf' });
@@ -145,6 +146,7 @@ box(-6, 15, 6, 1.6, 1.8, 'brick', { deco: 'hearth' });
 box(-2, 22.5, 3, 1.2, 0.9, 'wood', { deco: 'table' });
 // Bone mill
 box(-8.5, 32, 2.5, 6, 1.2, 'bone', { deco: 'bones' });
+box(-5.5, 37.5, 1.4, 1.4, 1.1, 'iron', { deco: 'wastebin' });   // Scrap Metal waste bin (distinct from the Unclog Chute spot)
 // Lobby
 export const LOBBY_MIRROR = { x: 0, z: -83.4 };
 box(-6, -70, 2, 2, 1.2, 'cave'); box(6.5, -78, 1.6, 1.6, 2, 'cave');

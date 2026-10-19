@@ -826,11 +826,21 @@ export class Game {
       g.fillStyle = t.type === 'solo' ? '#ffd75e' : t.type === 'coop3' ? '#ff7ad9' : '#4ff0ff';
       g.beginPath(); g.arc(x, y, 3.2, 0, 7); g.fill();
     }
+    // a co-op partner's "come help" ping pulses on the minimap for a few seconds
+    if (this.coopPingAt && performance.now() - this.coopPingAt < 6000) {
+      const [px, py] = T(this.coopPing.x, this.coopPing.z);
+      const pulse = 4 + Math.abs(Math.sin(performance.now() / 180)) * 6;
+      g.strokeStyle = '#7dff9a'; g.lineWidth = 2; g.beginPath(); g.arc(px, py, pulse, 0, 7); g.stroke();
+      g.fillStyle = '#7dff9a'; g.font = '12px serif'; g.fillText('🤝', px - 6, py - 8);
+    }
     const [x, y] = T(this.body.x, this.body.z);
     g.save(); g.translate(x, y); g.rotate(-this.yaw);
     g.fillStyle = this.me?.color || '#fff'; g.strokeStyle = '#000';
     g.beginPath(); g.moveTo(0, -7); g.lineTo(5, 5); g.lineTo(-5, 5); g.closePath(); g.fill(); g.stroke(); g.restore();
   }
+
+  /** A paired co-op partner pinged us from a station — pulse it on the minimap for a few seconds. */
+  pingCoop(x, z) { this.coopPing = { x, z }; this.coopPingAt = performance.now(); }
 
   render() {
     const r = this.renderer;

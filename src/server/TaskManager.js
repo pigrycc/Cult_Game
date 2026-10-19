@@ -198,7 +198,11 @@ export class TaskManager {
       case 'bell': inst.data.seq = []; inst.data.rounds = 0; break;
       case 'bellows': inst.data.count = 0; inst.data.lastPad = -1; inst.data.lastT = 0; inst.data.players = new Set(); break;
       case 'hold': if (def.lard) inst.data.lardId = [...this.lard.keys()][0]; break;
-      case 'collect': inst.data.placed = def.steps.map(() => false); inst.data.carrier = null; break;
+      case 'collect':
+        inst.data.placed = def.steps.map(() => false); inst.data.carrier = null;
+        // spawn the items as visible props lying on the ground/table BEFORE pickup (one per rep)
+        inst.data.items = def.steps.map((_, i) => { const s = def.srcs[i % def.srcs.length]; return this.makeItem(def.item, s.x, s.y ?? 0.15, s.z, inst.uid).id; });
+        break;
       default: break;
     }
     this.active.set(inst.uid, inst);
@@ -248,6 +252,26 @@ export class TaskManager {
     this.m.toastAll(`🆘 ${p.name} needs help: ${inst.def.name} (${ROOM_TAGS[inst.def.room]})${partners.length ? ' — with ' + partners.join(' & ') : ''}`, 'info');
   }
 
+  /**
+   * Auto-ping the paired partner(s) when a minion engages a co-op station alone, so they know to come help.
+   * Fires once per ~6 s per task while a partner isn't already on it (toast + a chime fx at the station for the partner).
+   */
+  pingCoopPartner(p, inst) {
+    if (inst.kind !== 'coop' || !inst.assignedTo) return;
+    const partners = inst.assignedTo.filter(id => id !== p.id).map(id => this.m.P(id)).filter(q => q && !q.ghost);
+    if (!partners.length) return;
+    // don't nag if a partner is already working this task
+    if (partners.some(q => q.hold?.uid === inst.uid || q.carryHandle?.uid === inst.uid)) return;
+    if (this.m.time - (inst.data.pingAt ?? -99) < 6) return;
+    inst.data.pingAt = this.m.time;
+    inst.helpCall = true;                                        // also surface it on the HUD board
+    const pos = this.mainPoint(inst);
+    for (const q of partners) {
+      this.m.send(q.id, { t: 'coopPing', x: pos.x, z: pos.z, label: inst.def.name, from: p.name, room: ROOM_TAGS[inst.def.room] });
+      this.m.send(q.id, { t: 'fx', type: 'chime', id: q.id });
+    }
+  }
+
   // ---------------------------------------------------------------- bot support
   heldToolType(p) { return p.heldTool ? this.tools.get(p.heldTool)?.type ?? null : null; }
 
@@ -294,8 +318,9 @@ export class TaskManager {
     const it = this.items.get(p.heldItem);
     p.heldItem = null;
     if (!it) return;
-    // A collect item dropped loose (not placed) just vanishes back to its supply crate; free the carrier slot.
-    if (it.taskUid != null && this.active.get(it.taskUid)?.def.mech === 'collect') { this.clearCollectCarrier(it); this.items.delete(it.id); return; }
+    // A collect item dropped loose (not placed) stays as a world prop on the floor and frees the carrier slot,
+    // so it remains visible and can be picked up again.
+    if (it.taskUid != null && this.active.get(it.taskUid)?.def.mech === 'collect') this.clearCollectCarrier(it);
     it.heldBy = null;
     const f = { x: -Math.sin(p.body.yaw), z: -Math.cos(p.body.yaw) };
     it.x = p.body.x + f.x * 0.6; it.z = p.body.z + f.z * 0.6; it.y = 0.1;
@@ -370,7 +395,8 @@ export class TaskManager {
         break;
       case 'collect': {
         const placed = inst.data.placed || [];
-        if (!this.m.P(this.carrierOf(inst))) pt('src', d.srcs[0], `Take ${ITEM_TYPES[d.item].name}`, false, { collectSrc: true });
+        // show the "take" marker over a remaining source prop (none while someone is carrying one)
+        if (!this.m.P(this.carrierOf(inst))) { const free = [...this.items.values()].find(i => i.taskUid === inst.uid && !i.heldBy && i.step === 0); if (free) pt('src', { x: free.x, y: 0.4, z: free.z }, `Take ${ITEM_TYPES[d.item].name}`, false, { collectSrc: true }); }
         d.steps.forEach((s, i) => { if (!placed[i]) pt('d' + i, s, `Place ${ITEM_TYPES[d.item].name} here (E)`, false, { slot: i, goal: true }); });
         break;
       }
@@ -462,9 +488,9 @@ export class TaskManager {
         p.hold = { target, uid: inst.uid, need: this.need(d.time), pos: pt, high: true, onDone: () => this.complete(inst, [p, this.m.P(p.ridingOn)]) };
         break;
       case 'fetch': case 'books': this.useFetch(p, inst, part, pt, needTool); break;
-      case 'coop': p.hold = { target, uid: inst.uid, need: Infinity, pos: pt, handle: +part.slice(1) }; break;
+      case 'coop': p.hold = { target, uid: inst.uid, need: Infinity, pos: pt, handle: +part.slice(1) }; this.pingCoopPartner(p, inst); break;
       case 'bell': this.pullBell(p, inst, +part.slice(1)); break;
-      case 'carry': this.grabHandle(p, inst, +part.slice(1)); break;
+      case 'carry': this.grabHandle(p, inst, +part.slice(1)); this.pingCoopPartner(p, inst); break;
       case 'relay':
         if (part === 'pile') {
           if ([...this.items.values()].some(i => i.taskUid === inst.uid)) return this.m.toast(p.id, 'A sandbag is already waiting to be carried.');
@@ -546,9 +572,11 @@ export class TaskManager {
     if (part === 'src') {
       if (p.heldItem || p.load) return this.m.toast(p.id, 'Your hands are full.');
       if (inst.data.carrier) return this.m.toast(p.id, `Someone is already carrying a ${ITEM_TYPES[d.item].name}.`);
-      const it = this.makeItem(d.item, pt.x, 0.2, pt.z, inst.uid);
+      // pick up one of the visible source props lying there (they exist in the world before pickup)
+      const it = [...this.items.values()].find(i => i.taskUid === inst.uid && !i.heldBy && i.step === 0);
+      if (!it) return this.m.toast(p.id, `No ${ITEM_TYPES[d.item].name} left to carry.`);
       it.heldBy = p.id; p.heldItem = it.id; inst.data.carrier = p.id;
-      this.m.fx('lift', { x: pt.x, z: pt.z });
+      this.m.fx('lift', { x: it.x, z: it.z });
       this.m.toast(p.id, `Carry the ${ITEM_TYPES[d.item].name} to a glowing slot and press E.`);
       return;
     }

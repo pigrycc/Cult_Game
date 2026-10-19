@@ -442,11 +442,11 @@ export class Ceremony {
     if (!j || !j.pending || !p || p.id !== j.id) return;
     j.pending = false;
     if (respawn && this.sub === CER.VOTE) {
-      const fresh = m.npcs.spawnLine('altar');
+      const fresh = m.npcs.spawnLine('altar', 2);              // Simplified Jailer: 2 fresh captives (matches the 2 that would remain)
       this.levers = [false, false, false];
       const mm = this.M; if (mm) for (const n of fresh) mm.knownNpcs.add(n.id);
       m.fx('trapdoor');
-      m.toastAll('🗝️ The Jailer sent the captives into the abyss — 3 new captives stand at the portal.');
+      m.toastAll('🗝️ The Jailer sent the captives into the abyss — 2 new captives stand at the portal.');
     } else m.toast(p.id, '🗝️ You keep the current captives.');
   }
 
@@ -598,7 +598,9 @@ export class Ceremony {
     const m = this.m, old = this.M, e = this.E;
     m.fx('fumes', { id: old?.id });
     if (!old) return 'Toxic Fumes: there was no Master to choke.';
-    const cands = m.living.filter(p => p.id !== old.id && p.id !== m.execId && !p.muted);
+    const base = m.living.filter(p => p.id !== old.id && p.id !== m.execId && !p.muted);
+    const fresh = base.filter(p => !p.exhausted);     // never pass the staff to an Exhausted minion unless everyone eligible is exhausted
+    const cands = fresh.length ? fresh : base;
     const least = Math.min(...cands.map(p => p.servedMaster));
     const nm = pick(cands.filter(p => p.servedMaster === least));
     if (!m.exhaustedQueue.includes(old.id)) m.exhaustedQueue.push(old.id);

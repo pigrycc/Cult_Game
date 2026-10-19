@@ -123,7 +123,7 @@ export const TASKS = {
   glass:   { room: 'alchemy', name: 'Sweep Broken Glass', type: 'solo', mech: 'hold', time: 1.5, tool: 'broom', game: 'scrub',
              spots: [P(24, -5.5, 0.05), P(29, -11, 0.05), P(31, -4, 0.05)], reps: 3 },
   specimens: { room: 'alchemy', name: 'Sort Glowing Specimens', type: 'solo', mech: 'collect', item: 'specimen',
-             srcs: [P(26, -9, 1.0), P(26, -9, 1.0), P(26, -9, 1.0)], steps: [{ ...P(23.4, -4.4, 1.3) }, { ...P(28.4, -4.0, 1.3) }, { ...P(31.6, -6.2, 1.3) }], reps: 3 },
+             srcs: [P(26, -9, 1.0), P(26, -9, 1.0), P(26, -9, 1.0)], steps: [{ ...P(24, -4.7, 1.1) }, { ...P(28, -4.3, 1.1) }, { ...P(32, -4.7, 1.1) }], reps: 3 },
   calib:   { room: 'alchemy', name: 'Reagent Calibration via Intercom', type: 'coop2', mech: 'calib',
              scale: P(22, -9, 1.1), scroll: P(20.2, 10.6, 1.2) },
   // ---- Library & Scriptorium ----
@@ -158,7 +158,7 @@ export const TASKS = {
   skulls:  { room: 'bonemill', name: 'Carry Skulls to the Hopper', type: 'solo', mech: 'fetch', item: 'skull',
              srcs: [P(-6, 36.5, 0.1), P(-1.5, 30, 0.1), P(4, 32, 0.1)], steps: [{ ...P(-3, 34.3, 1.5), time: 0.3 }], reps: 3 },
   scrap:   { room: 'bonemill', name: 'Sort Scrap Metal from Bones', type: 'solo', mech: 'collect', item: 'scrap',
-             srcs: [P(-4.5, 33, 0.1), P(1, 31.5, 0.1), P(3, 35, 0.1)], steps: [{ ...P(5, 28.5, 1.0) }, { ...P(5, 28.5, 1.0) }, { ...P(5, 28.5, 1.0) }], reps: 3 },
+             srcs: [P(-4.5, 33, 0.1), P(1, 31.5, 0.1), P(3, 35, 0.1)], steps: [{ ...P(-5.5, 35.8, 1.0) }, { ...P(-5.5, 35.8, 1.0) }, { ...P(-5.5, 35.8, 1.0) }], reps: 3 },
   capstan: { room: 'bonemill', name: 'Drive the Mill Capstan', type: 'coop2', mech: 'coop', time: 5,
              handles: [P(0.6, 34.6, 1.0), P(3.6, 34.6, 1.0)] },
   ash:     { room: 'bonemill', name: 'Transport the Ash Chest', type: 'coop2', mech: 'carry',

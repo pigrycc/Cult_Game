@@ -1,6 +1,6 @@
 {
   "name": "crypt-of-minions",
-  "version": "0.9.0",
+  "version": "0.9.14",
   "description": "Crypt of Minions - social deduction slapstick co-op prototype",
   "main": "dist/main.cjs",
   "scripts": {

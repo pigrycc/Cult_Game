@@ -45,7 +45,7 @@ export class Match {
       debugAll: !!opts.debugAll, freezeRed: false, redX: null, redT: 1.5, yellowMul: 1,
       debateSec: null, debateInfinite: false, maxConcurrent: null, mutinyThreshold: null,
       forcedEvent: null, forcedNpcs: null, forcedDuo: null, botMode: 'roamer',
-      workSec: null, holdMul: 1, extendedCurses: false, curseWeights: null, botDecisionDelaySeconds: 2.25, botChat: true, destabilizationTriggersChaosWin: false, simplified: false, roleDropPct: 35, simpleEvents: false, eliminateSec: 20, botSpeed: 1, noSprint: false, shoveDropPct: 30,
+      workSec: null, holdMul: 1, extendedCurses: false, curseWeights: null, botDecisionDelaySeconds: 2.25, botChat: true, destabilizationTriggersChaosWin: false, simplified: false, roleDropPct: 35, simpleEvents: false, eliminateSec: 20, botSpeed: 1, noSprint: false, shoveDropPct: 30, voiceRange: 20,
       forceFaction: new Map(), forceRole: new Map(),
     };
     this.bars = new ProgressBars(this);
@@ -477,10 +477,11 @@ export class Match {
   voiceGain(sp, l) {
     if (this.phase !== PHASE.WORK) return { gain: 1, via: 'global' };
     const d = dist2(sp.body, l.body);
+    const range = this.dbg.voiceRange ?? 20;      // debug-tunable proximity voice radius
     let gain = 0, via = 'local';
-    if (d < 20) {
+    if (d < range) {
       const occ = wallsBetween(sp.body.x, sp.body.z, l.body.x, l.body.z, 3);
-      gain = Math.max(0, 1 - d / 20) * Math.pow(0.3, occ);
+      gain = Math.max(0, 1 - d / range) * Math.pow(0.3, occ);
     }
     for (const ic of INTERCOMS) {
       if (dist2(sp.body, ic) < 2.6) {

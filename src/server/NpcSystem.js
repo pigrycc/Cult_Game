@@ -230,10 +230,10 @@ export class NpcSystem {
   // ---------------------------------------------------------- Simplified Mode: captives on trapdoors at the portal
   line() { return [...this.npcs.values()].filter(n => n.state === 'line'); }
   /** Spawn 3 fresh captives, each on a trapdoor with a lever, directly in front of the portal (state 'line'). */
-  spawnLine(state = 'line') {
+  spawnLine(state = 'line', count = LINE_SPOTS.length) {
     for (const n of [...this.npcs.values()]) if (['line', 'altar', 'chamber', 'ground', 'carried'].includes(n.state)) this.toAbyss(n, true);
     const forced = this.m.dbg.forcedNpcs;
-    return LINE_SPOTS.map((s, i) => { const n = this.draw(forced?.[i]); Object.assign(n, { state, x: s.x, y: 0, z: s.z, spot: i, carrier: null }); return n; });
+    return LINE_SPOTS.slice(0, count).map((s, i) => { const n = this.draw(forced?.[i]); Object.assign(n, { state, x: s.x, y: 0, z: s.z, spot: i, carrier: null }); return n; });
   }
   /** A trapdoor opens: the captive falls into the abyss (kept briefly so clients can animate the fall). */
   toAbyss(n, silent = false) {

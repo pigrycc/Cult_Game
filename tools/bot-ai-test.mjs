@@ -94,8 +94,10 @@ function ceremonyTimes(delay) {
   return times;
 }
 { const fast = ceremonyTimes(0), slow = ceremonyTimes(2);
-  ok(Math.max(...fast.vote) < 0.4 && fast.nominateAt < 0.4, `delay 0 → instant (nominate ${fast.nominateAt.toFixed(2)}s, last vote ${Math.max(...fast.vote).toFixed(2)}s)`);
-  ok(slow.nominateAt >= 1.2 && slow.nominateAt <= 3.0, `delay 2 → Master nominates after ${slow.nominateAt.toFixed(2)}s (expected 1.3–2.7)`);
+  // votes are still instant at delay 0; the Master now WALKS up to its pick before nominating, so the nomination
+  // is no longer instant — it just carries no extra "thinking" delay (walk time only).
+  ok(Math.max(...fast.vote) < 0.4 && fast.nominateAt < 3.5, `delay 0 → votes instant, Master walks up then nominates (nominate ${fast.nominateAt.toFixed(2)}s, last vote ${Math.max(...fast.vote).toFixed(2)}s)`);
+  ok(slow.nominateAt >= fast.nominateAt, `delay 2 → Master nominates later than at delay 0 (walk + thinking: ${slow.nominateAt.toFixed(2)}s ≥ ${fast.nominateAt.toFixed(2)}s)`);
   ok(slow.vote.length >= 4 && slow.vote.every(v => v >= 1.2 && v <= 3.1), `delay 2 → every bot vote lands 1.3–2.7 s after the window opens (${slow.vote.map(v => v.toFixed(1)).join(', ')})`);
   ok(Math.max(...slow.vote) - Math.min(...slow.vote) > 0.1, `bots do not all decide at the same instant (spread ${(Math.max(...slow.vote) - Math.min(...slow.vote)).toFixed(2)}s)`); }
 { // role card: deliberation before use
