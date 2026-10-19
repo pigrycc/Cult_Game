@@ -220,6 +220,19 @@ function buildProp(scene, b, W) {
     case 'bones': for (let i = 0; i < 26; i++) { const s = mesh(new THREE.SphereGeometry(0.16, 6, 5), mat('#d8d0b8')); s.position.set((Math.random() - 0.5) * 2, Math.random() * 1.1, (Math.random() - 0.5) * 5.5); g.add(s); } break;
     case 'bowl': B(b.w, b.h, b.d, '#3a3940'); g.add(rot(mesh(new THREE.SphereGeometry(0.5, 10, 6, 0, 6.28, 0, 1.4), mat('#45444a'), 0, b.h + 0.3, 0), 'x', Math.PI)); g.add(mesh(new THREE.ConeGeometry(0.3, 0.5, 6), mat('#9b4dff', { basic: true }), 0, b.h + 0.35, 0)); break;
     case 'bench': B(b.w, b.h, b.d, '#3a3940'); break;
+    case 'wastebin': {   // Scrap Metal drop-off: an iron waste bin
+      g.add(mesh(new THREE.CylinderGeometry(0.6, 0.5, b.h, 12), mat('#4a4e56', { metal: 0.6, rough: 0.5 }), 0, b.h / 2, 0));
+      g.add(flat(mesh(new THREE.TorusGeometry(0.58, 0.07, 5, 14), mat('#2a2c30', { metal: 0.7 }), 0, b.h, 0)));
+      for (let i = 0; i < 7; i++) { const a = i / 7 * 6.28; g.add(mesh(new THREE.BoxGeometry(0.1, 0.14, 0.1), mat(i % 2 ? '#9aa3ad' : '#7a4a2a', { metal: 0.5 }), Math.cos(a) * 0.3, b.h + 0.05, Math.sin(a) * 0.3)); }   // scrap poking out
+      break;
+    }
+    case 'specimenshelf': {   // Glowing Specimen drop-off: a long low alchemy rack with 3 colour-coded cradles
+      B(b.w, 0.1, b.d, '#4a3a28', 0, b.h - 0.05);
+      for (const sx of [-1, 1]) B(0.12, b.h, 0.12, '#3a2c20', sx * (b.w / 2 - 0.1), b.h / 2, 0);
+      const cols = ['#ff6a6a', '#6affa0', '#6aa0ff'];
+      cols.forEach((c, i) => { const x = -b.w / 2 + 2 + i * (b.w - 4) / 2; g.add(mesh(new THREE.TorusGeometry(0.32, 0.05, 6, 14), mat(c, { emissive: c, ei: 0.5 }), x, b.h + 0.05, 0)); });
+      break;
+    }
     default: B(b.w, b.h, b.d, base);
   }
 }

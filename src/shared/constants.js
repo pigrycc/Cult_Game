@@ -117,7 +117,7 @@ export const SIMPLE_ROLES = [
   { id: 111, simple: true, name: 'Exorcist', icon: '🕯️', windows: ['VOTE'], targets: [{ label: 'Player who gains Chaos Immunity', filter: 'any' }],
     desc: 'Choose a player. They gain Chaos Immunity for the rest of the match. (can be used on players that already have chaos as their faction to confuse players)' },
   { id: 112, simple: true, name: 'Jailer', icon: '🗝️', windows: ['VOTE'], targets: [],
-    desc: 'Privately see the faction of current captives. Then choose to either KEEP them or RESPAWN 3 new ones (factions of new ones are unknown to you).' },
+    desc: 'Privately see the faction of current captives. Then choose to either KEEP them or RESPAWN 2 new ones (factions of new ones are unknown to you).' },
   { id: 113, simple: true, name: 'Mirror Mage', icon: '🪞', windows: ['VOTE'], targets: [],
     desc: 'Copy and immediately trigger the ability of any role card that was already used.' },
   { id: 114, simple: true, name: 'Tiebreaker', icon: '⚖️', windows: ['VOTE'], targets: [],
@@ -169,6 +169,12 @@ export const FACTION_OBJECTIVE = {
   fire: 'Secure a strict majority of 🔥 Fire sacrifices in the portal at the final tally — or lock an unbeatable lead right after the Living Sacrifice (sudden death).',
   blood: 'Secure a strict majority of 🩸 Blood sacrifices in the portal at the final tally — or lock an unbeatable lead right after the Living Sacrifice (sudden death).',
   chaos: 'Force a TIE at the top of the final tally (e.g. Fire = Blood) — or get the Chaos Leader thrown into the portal during the Living Sacrifice (instant win).',
+};
+// Simplified Mode: the concise win-condition sentence shown above the faction card at the reveal.
+export const FACTION_OBJECTIVE_SIMPLE = {
+  fire: 'Secure a MAJORITY of Fire sacrifices in the portal at the final meeting to win the game',
+  blood: 'Secure a MAJORITY of Blood sacrifices in the portal at the final meeting to win the game',
+  chaos: 'Secure a MAJORITY of Chaos sacrifices in the portal at the final meeting to win the game or make it a TIE',
 };
 
 // ---------------------------------------------------------------------------

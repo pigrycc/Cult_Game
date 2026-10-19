@@ -50,7 +50,9 @@ YOUR TASK LIST (Work Phase)
   You get a short PERSONAL list on the HUD: 2 solo chores + 1 co-op chore (with a named partner). Only your own
   tasks show floating world markers, so the crypt isn't cluttered. Finish a solo chore and a new one appears after a
   couple of seconds. A co-op chore names a suggested partner, but ANY two minions who work the station together finish
-  it — press H to call the whole crew for help if your partner wanders off.
+  it — press H to call the whole crew for help if your partner wanders off. Simply STEPPING UP to a co-op station now
+  auto-pings your assigned partner (a chime + an on-screen "needs help" ping + a pulse on their minimap) so they know
+  to come join you, even if you don't press H.
 
 TASK MINIGAMES (new)
   Many chores open a quick 2D minigame when you press E (with the right tool, if one is needed):
@@ -64,9 +66,24 @@ TASK MINIGAMES (new)
     • Pour (Add Oil to Lamps) — hold to fill into the green band and release (overflow resets).
     • Plunge (Unclog Chute [Gaff]) — shove the hook up and down with the mouse.
     • Gauges (Equalize Pressure) — click each gauge while its needle is in the red zone.
-  Sorting chores (Replace Altar Candles, Sort Glowing Specimens, Sort Scrap Metal) — carry each item from its crate to a
-  glowing slot (E). New tools: Rag, Drain Bucket, Dull Ceremonial Blade, Butcher Cleaver.
+  Sorting chores (Replace Altar Candles, Sort Glowing Specimens, Sort Scrap Metal) — the loose items now sit in the
+  world as real 3D props before you grab them; carry each one from its pile to a glowing slot (E). Drop one by mistake
+  (Q) and it stays on the floor to be picked up again. Sort Scrap Metal now drops into a dedicated Waste Bin in the
+  Bone Mill, and Glowing Specimens go onto a visible shelf/rack in the Alchemy Lab. New tools: Rag, Drain Bucket,
+  Dull Ceremonial Blade, Butcher Cleaver.
   Co-op: the Bookshelf Ladder is now a stacking task (one minion rides another's back to reach the high shelf).
+
+VICTORY CONDITIONS (press Tab)
+  The scoreboard now carries a quick win-condition reminder under the altar tally:
+    🔥 FIRE: point lead over Blood   🩸 BLOOD: point lead over Fire
+    🔮 CHAOS: a TIE (Fire = Blood), a Chaos point lead, OR the Red Bar at 100% while Debug is ON
+    💀 ALL LOSE: the Red Bar hits 100% while Debug is OFF
+
+DEBUG: HUD & AUDIO (host, F1 → HUD & Audio)
+  • Proximity Voice Range — how far your voice carries during the Work phase (default 20).
+  • Minimap Scale — enlarge/shrink the corner minimap (saved locally per device).
+  • Task List Scale — enlarge/shrink the HUD task list (saved locally per device).
+  The two scale sliders are personal display prefs stored in your browser; they don't change anyone else's view.
 
 DEBUG: CURSE ODDS (host, F1 → Ceremony & Altar → "Curse spawn odds")
   A slider per curse glyph sets its relative spawn weight (0 = never). Tilt the odds to test a specific curse, or

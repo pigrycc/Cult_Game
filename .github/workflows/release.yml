@@ -40,6 +40,7 @@ jobs:
       - run: node tools/minigames-test.mjs
       - run: node tools/bot-master-test.mjs
       - run: node tools/bot-ai-test.mjs
+      - run: node tools/feedback-round-test.mjs
       - run: node build.mjs --package
       - name: Attach zip to release
         env:
@@ -70,6 +71,7 @@ jobs:
       - run: node tools/personal-tasks-test.mjs
       - run: node tools/minigames-test.mjs
       - run: node tools/bot-ai-test.mjs
+      - run: node tools/feedback-round-test.mjs
       - run: node build.mjs --package-mac
       - name: Verify the shipped zip (unzip it fresh, check signature + architectures)
         run: |

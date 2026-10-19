@@ -8,10 +8,20 @@ import { clearSavedMatchOverrides } from './overrides.js';
 
 // Configuration commands persisted to localStorage and re-applied automatically on the next start
 const PERSIST = new Set(['red_tick', 'freeze_red', 'yellow_mul', 'timescale', 'force_event', 'npc_config', 'debate_timer', 'max_concurrent',
-  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'chaos_on_explode', 'simplified', 'role_drop', 'simple_events', 'eliminate_timer', 'curse_weights', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
+  'mutiny_threshold', 'set_timers', 'extended_curses', 'bot_mode', 'bot_speed', 'bot_delay', 'bot_chat', 'chaos_on_explode', 'simplified', 'role_drop', 'simple_events', 'eliminate_timer', 'curse_weights', 'voice_range', 'disable_sprint', 'shove_drop', 'god_mode', 'spawn_bots', 'allow_debug_all']);
 const STORE = 'crypt_debug_settings_v1';
 export function loadDebugSettings() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { return {}; } }
 function saveDebugSettings(o) { try { localStorage.setItem(STORE, JSON.stringify(o)); } catch { /* storage unavailable */ } }
+
+// Personal HUD scale (minimap / task list) — client-only, saved per device.
+const HUD_STORE = 'crypt_hud_scale_v1';
+export function hudScale(which) { try { return +JSON.parse(localStorage.getItem(HUD_STORE) || '{}')[which] || 1; } catch { return 1; } }
+export function setHudScale(which, v) { let o = {}; try { o = JSON.parse(localStorage.getItem(HUD_STORE) || '{}'); } catch { /* ignore */ } o[which] = v; try { localStorage.setItem(HUD_STORE, JSON.stringify(o)); } catch { /* ignore */ } }
+/** Apply the saved minimap / task-list HUD scales as CSS transforms (anchored to their screen corners). */
+export function applyHudScale() {
+  const mini = document.getElementById('minimap'); if (mini) { const s = hudScale('minimap'); mini.style.transformOrigin = 'top right'; mini.style.transform = s > 1 ? `scale(${s})` : ''; }
+  const tb = document.getElementById('taskBoard'); if (tb) { const s = hudScale('tasklist'); tb.style.transformOrigin = 'top left'; tb.style.transform = s > 1 ? `scale(${s})` : ''; }
+}
 
 const opt = (v, l, sel) => `<option value="${v}" ${sel ? 'selected' : ''}>${l}</option>`;
 
@@ -135,7 +145,13 @@ export class DebugMenu {
         </div>
         <button data-c="timers">Apply timers</button> <button data-c="buffer0">Skip transition buffers (0 s)</button> <button data-c="timersreset">Reset defaults</button>
       </details>
-      <details><summary>8. Saved settings</summary>
+      <details open><summary>8. HUD & Audio</summary>
+        <label>Proximity Voice Range <input type="range" id="dVoice" min="3" max="60" step="1" value="${d.voiceRange ?? 20}"><b id="dVoiceV">${d.voiceRange ?? 20}</b> units <span class="small">(how far voice carries during the Work Phase)</span></label>
+        <label>Minimap Scale <input type="range" id="dMiniScale" min="1" max="3" step="0.1" value="${hudScale('minimap')}"><b id="dMiniScaleV">${hudScale('minimap').toFixed(1)}×</b></label>
+        <label>Task List Scale <input type="range" id="dTaskScale" min="1" max="2.5" step="0.1" value="${hudScale('tasklist')}"><b id="dTaskScaleV">${hudScale('tasklist').toFixed(1)}×</b></label>
+        <div class="small">Minimap/Task-List scale are personal HUD settings (saved on this device).</div>
+      </details>
+      <details><summary>9. Saved settings</summary>
         <div class="small">Every override above is saved locally and re-applied automatically when you host again.</div>
         <div class="small">Saved: ${Object.keys(loadDebugSettings()).join(', ') || '— nothing yet —'}</div>
         <button data-c="clearsaved" class="danger">Clear saved settings</button>
@@ -202,6 +218,11 @@ export class DebugMenu {
     document.getElementById('dBots').oninput = e => { document.getElementById('dBotsV').textContent = e.target.value; };
     document.getElementById('dExtCur').onchange = e => this.cmd('extended_curses', { on: e.target.checked });
     for (const k of CURSE_KEYS) { const sl = document.getElementById('dCW_' + k); if (sl) sl.oninput = e => { document.getElementById('dCWv_' + k).textContent = e.target.value; }; }
+    // 8. HUD & Audio
+    document.getElementById('dVoice').oninput = e => { document.getElementById('dVoiceV').textContent = e.target.value; };
+    document.getElementById('dVoice').onchange = e => this.cmd('voice_range', { v: +e.target.value });
+    document.getElementById('dMiniScale').oninput = e => { document.getElementById('dMiniScaleV').textContent = (+e.target.value).toFixed(1) + '×'; setHudScale('minimap', +e.target.value); applyHudScale(); };
+    document.getElementById('dTaskScale').oninput = e => { document.getElementById('dTaskScaleV').textContent = (+e.target.value).toFixed(1) + '×'; setHudScale('tasklist', +e.target.value); applyHudScale(); };
     const all = document.getElementById('dAll'); if (all) all.onchange = e => this.cmd('allow_debug_all', { on: e.target.checked });
     this.el.querySelectorAll('input,select').forEach(i => i.addEventListener('keydown', e => e.stopPropagation()));
   }

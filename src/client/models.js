@@ -197,6 +197,17 @@ export function makeItem(type) {
     case 'skull': g.add(mesh(G.sphere(0.13, 8, 6), mat('#e8e0c8'), 0, 0.14, 0)); for (const s of [-1, 1]) g.add(mesh(G.sphere(0.035, 6, 4), mat('#000', { basic: true }), s * 0.05, 0.16, -0.11)); break;
     case 'sandbag': { const s = mesh(G.sphere(0.32, 9, 7), mat('#b8955a', { rough: 1 }), 0, 0.26, 0); s.scale.set(1.15, 0.8, 0.9); g.add(s); g.add(flat(mesh(G.torus(0.09, 0.03, 4, 8), mat('#6a4a2a'), 0, 0.5, 0))); break; }
     case 'carcass': g.add(mesh(G.box(0.8, 0.36, 0.42), mat('#cfe8f5', { emissive: '#3a6a80', ei: 0.3 }), 0, 0.2, 0)); g.add(mesh(G.box(0.7, 0.3, 0.36), mat('#b34a4a'), 0, 0.2, 0)); break;
+    case 'specimen': {   // a glowing phosphorescent reagent jar
+      g.add(mesh(G.cyl(0.12, 0.14, 0.26, 10), mat('#cfeaff', { transparent: true, opacity: 0.5 }), 0, 0.15, 0));
+      g.add(mesh(G.sphere(0.11, 10, 8), mat('#9effa0', { emissive: '#4cff7a', ei: 1.6 }), 0, 0.16, 0));
+      g.add(mesh(G.cyl(0.06, 0.06, 0.07, 8), mat('#8a6a3a'), 0, 0.31, 0));
+      break;
+    }
+    case 'scrap': {      // a jagged chunk of scrap metal
+      g.add(mesh(new THREE.IcosahedronGeometry(0.16, 0), mat('#9aa3ad', { metal: 0.7, rough: 0.5, flat: true }), 0, 0.16, 0));
+      g.add(mesh(G.box(0.3, 0.05, 0.08), mat('#7a828a', { metal: 0.6 }), 0.08, 0.1, 0.04));
+      break;
+    }
     default: g.add(mesh(G.box(0.2, 0.2, 0.2), mat('#ff00ff')));
   }
   return g;

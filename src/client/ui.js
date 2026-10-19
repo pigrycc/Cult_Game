@@ -3,7 +3,7 @@
 //  crystals/gold), nameplates, NPC glyph tooltips, ceremony panels, modals,
 //  finale & scoreboard.
 // ============================================================================
-import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS, roleCard, FACTION_OBJECTIVE, curseDesc } from '../shared/constants.js';
+import { FACTION_INFO, ROLE_BY_ID, ROLES, CURSES, MILESTONE_EVENTS, PHASE, CER, ROBE_COLORS, STATUS_ICONS, roleCard, FACTION_OBJECTIVE, FACTION_OBJECTIVE_SIMPLE, curseDesc } from '../shared/constants.js';
 import { TOOLS, ITEM_TYPES, RUNES, TASK_PALETTE } from '../shared/tasks.js';
 import { matchAffectingOverrides } from './overrides.js';
 
@@ -113,10 +113,9 @@ export class UI {
     const f = FACTION_INFO[msg.faction];
     const el = $('#reveal'); el.classList.remove('hidden'); el.style.opacity = 1;
     el.innerHTML = `
-      <div class="objBanner" style="--fc:${f.color}"><b>FACTION OBJECTIVE ${f.icon}</b><span>${esc(FACTION_OBJECTIVE[msg.faction])}</span></div>
-      <div class="cardWrap"><div class="card"><div class="face back" style="--glow:${f.color}"><div class="crest">${f.icon}</div><div class="runes">ᚠ ᚢ ᚦ ᚨ ᚱ</div></div></div><div class="cardGlow" style="background:${f.color}"></div></div>
-      <div class="revealTitle" style="color:${f.color}">${f.name.toUpperCase()}</div>
-      <div class="revealSub">SIMPLIFIED MODE — no role card yet. Every finished chore has a chance to give you one.</div>
+      <div class="objBanner" style="--fc:${f.color}"><span>${esc(FACTION_OBJECTIVE_SIMPLE[msg.faction])}</span></div>
+      <div class="cardWrap"><div class="card"><div class="face back" style="--glow:${f.color}"><div class="belongTo">You belong to:</div><div class="crest">${f.icon}</div><div class="factionName" style="color:${f.color}">${f.name.toUpperCase()}</div></div></div><div class="cardGlow" style="background:${f.color}"></div></div>
+      <div class="revealSub">Perform tasks to prevent the cave from exploding</div>
       <div class="revealTimer" id="rTimer"></div>`;
     let t = (msg.back || 3) + (msg.front || 3);
     const iv = setInterval(() => {
@@ -331,27 +330,33 @@ export class UI {
     if (c.sub === CER.VOTE && c.simple) {
       const P = id => st.players.find(p => p.id === id);
       const mP = P(c.nominatedBy ?? st.masterId), eP = P(st.execId), master = P(st.masterId);
-      html += `<div class="cpTitle">${avatar(mP)} nominated ${avatar(eP)} as Executioner — APPROVE or MUTINY?</div>
-        <div class="cpNote">⚔️ <b>Strict majority of MUTINY</b>: ${esc(master?.name ?? 'the Master')} & ${esc(eP?.name ?? 'the Executioner')} are overthrown — a random eligible minion becomes Master, picks an Executioner and goes <b>straight to the execution</b> (one vote per milestone).<br>🤝 Tie or majority APPROVE: ${esc(eP?.name ?? 'the Executioner')} executes.</div>`;
+      // Inside the frame: just the nomination + the big "use your role" header.
+      html += `<div class="cpNom">${avatar(mP)} nominated ${avatar(eP)} as Executioner</div>
+        <div class="cpUseRole">YOU CAN USE YOUR ROLE NOW!</div>`;
       if (c.voter) html += `<div class="voteRow"><button class="vbtn ${c.myVote === 0 ? 'sel' : ''}" data-v="0"><span class="k">1</span> 🤝 APPROVE</button><button class="vbtn mut ${c.myVote === 1 ? 'sel' : ''}" data-v="1"><span class="k">2</span> ⚔️ MUTINY</button></div>`;
-      html += `<div class="cpNote">${c.decided ?? 0}/${c.voters ?? 0} decided • 🃏 Role cards can be played NOW with [G]</div>`;
+      html += `<div class="cpNote">${c.decided ?? 0}/${c.voters ?? 0} decided</div>`;
+      // Outside/below the frame: how it works.
+      html += `<div class="cpRules">⚔️ <b>Strict majority of MUTINY</b>: ${esc(master?.name ?? 'the Master')} & ${esc(eP?.name ?? 'the Executioner')} are overthrown — a random eligible minion becomes Master, picks an Executioner and goes straight to the execution (one vote per milestone).<br>🤝 Tie or majority APPROVE: ${esc(eP?.name ?? 'the Executioner')} executes. • 🃏 Play role cards now with [G].</div>`;
     } else if (c.sub === CER.ELIMINATE) {
       html += `<div class="cpTitle">${esc(name(st.masterId))} chooses which captive falls into the abyss</div>`;
       html += st.masterId === you.id ? '<div class="cpNote big">Aim at a captive to read its glyph • walk to its lever and press <b>E</b> to open the trapdoor</div>' : '<div class="cpNote">Only the Master can read the glyphs. You are frozen until a lever is pulled.</div>';
     } else if (c.sub === CER.VOTE) {
       const P = id => st.players.find(p => p.id === id);
       const mP = P(c.nominatedBy ?? st.masterId), eP = P(st.execId), master = P(st.masterId);
-      html += `<div class="cpTitle">${avatar(mP)} nominated ${avatar(eP)} as Executioner. Do you agree?</div>
-        <div class="cpNote">⚔️ <b>If the mutiny succeeds</b> (${c.threshold}+ 💎): ${esc(master?.name ?? 'the Master')} is overthrown, the top mutineer takes the staff and nominates anew, and every crystal spent is consumed.<br>🛡️ <b>If it fails</b>: all crystals return to their owners and ${esc(eP?.name ?? 'the Executioner')} carries out the execution.</div>`;
+      // Inside the frame: just the nomination + the big "use your role" header.
+      html += `<div class="cpNom">${avatar(mP)} nominated ${avatar(eP)} as Executioner</div>
+        <div class="cpUseRole">YOU CAN USE YOUR ROLE NOW!</div>`;
+      let rules = `⚔️ <b>If the mutiny succeeds</b> (${c.threshold}+ 💎): ${esc(master?.name ?? 'the Master')} is overthrown, the top mutineer takes the staff and nominates anew, and every crystal spent is consumed.<br>🛡️ <b>If it fails</b>: all crystals return to their owners and ${esc(eP?.name ?? 'the Executioner')} carries out the execution. • Reveal your role card with [G].`;
       if (c.voter) {
         const sealed = c.sealed.includes(you.id), prov = c.provoked.includes(you.id);
         const opts = [[0, 'Yes'], [1, 'Disagree — 1 💎'], [2, 'Strongly Disagree — 2 💎'], [3, 'Absolutely Disagree — 3 💎']];
         html += `<div class="voteRow">${opts.map(([v, l], i) => `<button class="vbtn ${c.myVote === v ? 'sel' : ''}" data-v="${v}" ${(v > 0 && (sealed || (v > you.crystals && !you.infiniteMana) || (c.anarchy && v > 1))) ? 'disabled' : ''}><span class="k">${i + 1}</span> ${l}</button>`).join('')}</div>`;
-        if (sealed) html += '<div class="cpNote">🤫 You are sealed by the Silence Enchanter.</div>';
-        if (prov) html += '<div class="cpNote">📢 You are provoked: you will play at least 1 crystal.</div>';
-        if (c.anarchy) html += '<div class="cpNote">🏴 Anarchy: max 1 crystal each, 1 is enough.</div>';
-        html += `<div class="cpNote">Threshold to overthrow: <b>${c.threshold}</b> 💎 • the vote closes as soon as everyone has decided.</div>`;
+        if (sealed) rules += '<br>🤫 You are sealed by the Silence Enchanter.';
+        if (prov) rules += '<br>📢 You are provoked: you will play at least 1 crystal.';
+        if (c.anarchy) rules += '<br>🏴 Anarchy: max 1 crystal each, 1 is enough.';
+        rules += `<br>Threshold to overthrow: <b>${c.threshold}</b> 💎 • the vote closes as soon as everyone has decided.`;
       } else html += `<div class="cpNote">The crew is voting… (${c.voted.length} decided)</div>`;
+      html += `<div class="cpRules">${rules}</div>`;
     } else if (c.sub === CER.COUNT || c.sub === CER.REACTION || (c.result && c.sub === CER.EXECUTION && performance.now() - (this.resT || 0) < 3500)) {
       const key = c.reveal.map(r => r.id).join(',');
       if (key !== this.lastCountKey) { this.lastCountKey = key; this.countStart = performance.now(); this.resT = performance.now(); }
@@ -920,7 +925,13 @@ export class UI {
       return p.publicNot ? `<span class="small">not ${FACTION_INFO[p.publicNot].icon}</span>` : '<span class="small">?</span>';
     };
     const players = `<h3>MINIONS</h3><table><tr class="small"><th></th><th>Status</th>${st.simple ? '' : '<th>💎</th>'}<th>Role</th><th>Cult</th></tr>${st.players.map(p => `<tr${p.id === st.you.id ? ' style="background:rgba(255,215,94,.08)"' : ''}><td><span style="color:${p.color}">●</span> ${esc(p.name)} ${p.bot ? '🤖' : ''}</td><td>${p.master ? '👑' : ''}${p.exec ? '🪓' : ''}${p.exhausted ? '💤' : ''}${p.muted ? '🤐' : ''}${p.ghost ? '👻' : ''}${p.key ? '🗝️' : ''}${p.ward ? '🛡️' : ''}</td>${st.simple ? '' : `<td>${p.crystals}</td>`}<td>${p.role ? ROLE_BY_ID[p.role].icon + ' ' + esc(ROLE_BY_ID[p.role].name) + (p.roleUsed ? ' <span class="small">(used)</span>' : '') : '🂠'}</td><td>${facTxt(p)}</td></tr>`).join('')}</table>
-      <div class="scSub">${st.simple ? '<b>SIMPLIFIED MODE</b> • ' : ''}Altar: 🔥${st.tally.fire} 🩸${st.tally.blood} 🔮${st.tally.chaos}${st.simple ? ' • Mutiny: strict majority' : ` • Rebellion threshold ${st.balance.threshold} 💎`} • ${st.milestones} milestones${meP ? '' : ''}</div>`;
+      <div class="scSub">${st.simple ? '<b>SIMPLIFIED MODE</b> • ' : ''}Altar: 🔥${st.tally.fire} 🩸${st.tally.blood} 🔮${st.tally.chaos}${st.simple ? ' • Mutiny: strict majority' : ` • Rebellion threshold ${st.balance.threshold} 💎`} • ${st.milestones} milestones${meP ? '' : ''}</div>
+      <div class="scVic"><h3>VICTORY CONDITIONS</h3>
+        <div class="vcRow"><span style="color:${FACTION_INFO.fire.color}">🔥 FIRE:</span> Point lead over Blood</div>
+        <div class="vcRow"><span style="color:${FACTION_INFO.blood.color}">🩸 BLOOD:</span> Point lead over Fire</div>
+        <div class="vcRow"><span style="color:${FACTION_INFO.chaos.color}">🔮 CHAOS:</span> TIE (Fire = Blood) | Chaos point lead | Red Bar 100% (Debug ON)</div>
+        <div class="vcRow"><span style="color:#ff6b6b">💀 ALL LOSE:</span> Red Bar 100% (Debug OFF)</div>
+      </div>`;
     if ($('#scPlayers').dataset.h !== players) { $('#scPlayers').dataset.h = players; $('#scPlayers').innerHTML = players; }
     // debug-override indicator lives here (above the log), not on the HUD
     const dbg = $('#scDbg'), ov = this.dbgOverrides || [];

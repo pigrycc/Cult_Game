@@ -323,7 +323,7 @@ export class Bots {
     const m = this.m, cer = m.cer, B = p.brain;
     p.botWorking = false;
     const key = `${m.ceremonyIndex}:${cer.sub}:${cer.mode}:${m.masterId}:${m.execId}`;
-    if (B.cerKey !== key) { B.cerKey = key; B.decT = m.dbg.botMode === 'human' ? this.think() : rand(1.0, 2.4); B.done = false; B.victim = null; B.goal = null; B.liftAt = null; }
+    if (B.cerKey !== key) { B.cerKey = key; B.decT = m.dbg.botMode === 'human' ? this.think() : rand(1.0, 2.4); B.done = false; B.victim = null; B.goal = null; B.liftAt = null; B.nomTarget = null; }
     B.decT -= dt;
     const ready = B.decT <= 0 && !B.done;
     const mode = m.dbg.botMode, human = mode === 'human';
@@ -345,7 +345,18 @@ export class Bots {
         }
         break;
       case CER.NOMINATE:
-        if (p.id === m.masterId && ready) { const el = m.eligibleExec(); if (el.length) { cer.nominate((human ? this.mostTrusted(p, el) : pick(el)).id); B.done = true; } }
+        // The Master walks UP to the minion it wants, then nominates at close range (no cross-room instant pick).
+        if (p.id === m.masterId && ready) {
+          const el = m.eligibleExec();
+          if (el.length) {
+            let tgt = B.nomTarget && el.find(q => q.id === B.nomTarget);
+            if (!tgt) { tgt = human ? this.mostTrusted(p, el) : pick(el); B.nomTarget = tgt.id; }
+            if (this.navTo(p, tgt.body, dt, input) || dist2(p.body, tgt.body) < 2.4) {
+              input.yaw = Math.atan2(-(tgt.body.x - p.body.x), -(tgt.body.z - p.body.z));
+              cer.nominate(tgt.id); B.done = true; B.nomTarget = null;
+            }
+          }
+        }
         break;
       case CER.VOTE:
         if (ready && cer.isVoter(p)) {

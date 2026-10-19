@@ -132,7 +132,7 @@ const roleCase = (id, setup) => { const ctx = mk(7); toVote(ctx.m); const v = vo
   m.roles.use(caster, []); const off = sent.find(s => s.pid === caster.id && s.msg.t === 'jailerOffer');
   ok(off && off.msg.captives.length === 2 && off.msg.captives.every(c => c.faction), 'Jailer privately sees the captives\u2019 factions');
   m.cer.jailerReply(caster, true); const now = m.npcs.altar();
-  ok(now.length === 3 && now.every(n => !before.includes(n.id)), 'RESPAWN: 3 brand-new captives');
+  ok(now.length === 2 && now.every(n => !before.includes(n.id)), 'RESPAWN: 2 brand-new captives');
   ok(now.every(n => !m.npcs.authorized(caster, n)) && now.every(n => m.npcs.authorized(m.P(m.masterId), n)), 'the Jailer does not know the new ones; the Master does'); }
 { const { m, v, caster } = roleCase(113); ok(!m.roles.check(caster).ok, 'Mirror Mage needs an already-used card');
   giveRole(v[1], 114); m.roles.use(v[1], []); caster.cardUsed = false;
